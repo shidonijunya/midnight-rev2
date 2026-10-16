@@ -15,14 +15,14 @@ except Exception:
 st.markdown("""
 <style>
 .stApp {background:#101116;color:#ececf1}
-.block-container {max-width:1500px;padding-top:1.2rem}
+.block-container {max-width:1800px;padding-top:.7rem;padding-left:1rem;padding-right:1rem}
 .panel-card {background:#191b23;border:1px solid #30323d;border-radius:14px;padding:14px;margin:6px 0}
 .chat-card {background:#1a1d27;border:1px solid #363948;border-left:4px solid #9c7bff;border-radius:10px;padding:12px;margin:8px 0}
 .chat-name {font-size:.8rem;color:#aaa;margin-bottom:4px}
 .chat-title {font-weight:800;font-size:1.05rem;margin-bottom:5px}
-.die {display:inline-flex;align-items:center;justify-content:center;width:48px;height:48px;margin:4px;border-radius:10px;background:linear-gradient(145deg,#f8f8fb,#c7c9d6);color:#15151a;font-size:20px;font-weight:900;border:2px solid #fff;box-shadow:5px 6px 0 #5e6070, inset -4px -4px 8px #999;transform:perspective(150px) rotateX(-8deg) rotateY(10deg);animation:roll .55s ease-out}
+.die {display:inline-flex;align-items:center;justify-content:center;width:42px;height:42px;margin:4px;border-radius:10px;background:linear-gradient(145deg,#f8f8fb,#c7c9d6);color:#15151a;font-size:20px;font-weight:900;border:2px solid #fff;box-shadow:5px 6px 0 #5e6070, inset -4px -4px 8px #999;transform:perspective(150px) rotateX(-8deg) rotateY(10deg);animation:roll .55s ease-out}
 @keyframes roll {0%{transform:perspective(150px) rotateX(120deg) rotateY(180deg) scale(.5);opacity:.2}100%{transform:perspective(150px) rotateX(-8deg) rotateY(10deg) scale(1);opacity:1}}
-.bar-label {display:flex;justify-content:space-between;font-size:.82rem;margin:5px 0 3px}
+.bar-label {display:flex;justify-content:space-between;font-size:.76rem;margin:3px 0 2px}
 .small-muted {font-size:.8rem;color:#a1a4b3}
 </style>
 """, unsafe_allow_html=True)
@@ -56,14 +56,18 @@ def bar(label, current, maximum, color):
     maximum=max(0,int(maximum)); current=max(0,min(int(current or 0),maximum))
     pct=(current/maximum*100) if maximum else 0
     st.markdown(f"""<div class=\"bar-label\"><span>{label}</span><b>{current}/{maximum}</b></div>
-    <div style=\"height:10px;background:#30323d;border-radius:8px;overflow:hidden;margin-bottom:7px\"><div style=\"width:{pct:.2f}%;height:100%;background:{color};border-radius:8px\"></div></div>""",unsafe_allow_html=True)
+    <div style=\"height:7px;background:#30323d;border-radius:8px;overflow:hidden;margin-bottom:7px\"><div style=\"width:{pct:.2f}%;height:100%;background:{color};border-radius:8px\"></div></div>""",unsafe_allow_html=True)
 
 def save_resource(player_id, data):
     # O painel escreve no mesmo registro que a ficha individual lê.
     save_character(player_id, data)
 
-def publish_roll(kind, title, data, author):
-    add_chat_message(kind, data, author=author)
+def publish_roll(kind, payload, author):
+    """Publica no chat o payload completo de uma rolagem/ação."""
+    ok = add_chat_message(kind, payload, author=str(author or "Mesa").strip() or "Mesa")
+    if not ok:
+        st.error("Não foi possível publicar a ação no chat. Confira os logs do app e os Secrets do Supabase.")
+    return ok
 
 def dice_visual(values):
     shown=values[:10]
@@ -74,11 +78,11 @@ def dice_visual(values):
 def render_chat():
     st.subheader("Chat da mesa")
     with st.form("chat_form", clear_on_submit=True):
-        author=st.text_input("Nome no chat", value=st.session_state.get("chat_author","Jogador"), key="chat_author_input")
+        author=st.text_input("Nome no chat", value="Jogador", key="chat_author")
         message=st.text_input("Mensagem", placeholder="Escreva para a mesa...")
         send=st.form_submit_button("Enviar mensagem", use_container_width=True)
     if send and message.strip():
-        st.session_state["chat_author"]=author.strip() or "Jogador"
+        st.session_state["chat_author"] = author.strip() or "Jogador"
         publish_roll("text", {"text":message.strip()}, st.session_state["chat_author"])
     messages=get_chat_messages(100)
     if not messages:

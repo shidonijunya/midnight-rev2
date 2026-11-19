@@ -892,7 +892,7 @@ def render_armas():
 
             keys = weapon_keys(i)
 
-            with st.expander(f"Importar JSON — arma {i + 1}", expanded=False):
+            with st.popover(f"Importar JSON — arma {i + 1}"):
                 pasted = st.text_area("JSON da arma", key=f"weapon_json_{i}", height=130,
                     placeholder='{"nome":"Espada","test_dados":1,"test_lados":20,"bonus_ataque":5,"dano_dados":2,"dano_lados":6}')
                 if st.button("Aplicar JSON", key=f"apply_weapon_json_{i}"):

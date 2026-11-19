@@ -7,7 +7,7 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 
 from shared_backend import upload_asset
 
-SIZES = {"portrait": (600, 750), "boss": (1200, 900), "scene": (1600, 900), "token": (256, 256)}
+SIZES = {"portrait": (600, 750), "boss": (1200, 900), "scene": (1600, 900), "token": (768, 768)}
 MAX_BYTES = 10 * 1024 * 1024
 
 
@@ -21,11 +21,19 @@ def prepare_image(raw, kind, focus=(0.5, 0.5)):
             if src.width * src.height > 40_000_000:
                 raise ValueError("Imagem muito grande.")
             rgb = ImageOps.exif_transpose(src).convert("RGBA" if kind == "token" else "RGB")
-            cropped = ImageOps.contain(rgb, SIZES[kind], Image.Resampling.LANCZOS) if kind == "token" else ImageOps.fit(rgb, SIZES[kind],
-                                   method=Image.Resampling.LANCZOS,
-                                   centering=focus)
-            output = BytesIO()
-            cropped.save(output, format="WEBP", quality=88, method=6)
+            if kind == "token":
+                # Preserve transparent edges and native detail, never upscale.
+                # Older 256px token conversions blurred fine lines unnecessarily.
+                rgb.thumbnail(SIZES[kind], Image.Resampling.LANCZOS)
+                output = BytesIO()
+                rgb.save(output, format="WEBP", lossless=True, method=6)
+            else:
+                cropped = ImageOps.fit(
+                    rgb, SIZES[kind], method=Image.Resampling.LANCZOS,
+                    centering=focus,
+                )
+                output = BytesIO()
+                cropped.save(output, format="WEBP", quality=88, method=6)
             return output.getvalue()
     except (UnidentifiedImageError, OSError) as exc:
         raise ValueError("Imagem inválida ou danificada.") from exc

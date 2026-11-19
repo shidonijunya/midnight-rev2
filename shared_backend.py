@@ -90,6 +90,43 @@ def save_character(player_id, data):
         return False
 
 
+def patch_character(player_id, changes, attempts=5):
+    """Optimistic JSONB update: preserve unrelated fields under concurrent edits."""
+    if not isinstance(changes, dict) or not changes:
+        return True
+    if auth_configured() and st.session_state.get("_midnight_role") not in (player_id, "mestre"):
+        return False
+    client = get_client()
+    if client is None:
+        return False
+    for _ in range(attempts):
+        try:
+            response = (client.table("characters").select("data,updated_at")
+                        .eq("player_id", player_id).limit(1).execute())
+            rows = response.data or []
+            if not rows:
+                initial = {"player_id": player_id, "data": dict(changes),
+                           "updated_at": datetime.now(timezone.utc).isoformat()}
+                client.table("characters").upsert(initial, on_conflict="player_id").execute()
+                return True
+            stored = rows[0]
+            merged = dict(stored.get("data") or {})
+            merged.update(changes)
+            updated = datetime.now(timezone.utc).isoformat()
+            result = (client.table("characters")
+                      .update({"data": merged, "updated_at": updated})
+                      .eq("player_id", player_id)
+                      .eq("updated_at", stored["updated_at"])
+                      .select("player_id").execute())
+            if result.data:
+                return True
+        except Exception as exc:
+            st.error(f"Erro ao atualizar recursos: {_safe_error(exc)}")
+            return False
+    st.error("Outra sessão alterou a ficha simultaneamente. Tente novamente.")
+    return False
+
+
 def load_app_state(key, default=None):
     client = get_client()
     if client is None:

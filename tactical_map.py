@@ -34,6 +34,7 @@ button.active{border-color:#c5485b;background:#4a1e29}#status{margin-left:auto;c
 const OPT=__OPTIONS__, API=OPT.api, KEY=OPT.anon;
 let catalog=OPT.catalog||{};
 const vp=document.getElementById('viewport'),c=document.getElementById('canvas'),ctx=c.getContext('2d');
+ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality="high";
 const tip=document.getElementById('tip'),tokenSelect=document.getElementById('token'),status=document.getElementById('status');
 const W=1200,H=800,CELL=50,COLS=24,ROWS=16,remote=Boolean(API&&KEY);
 const headers={'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json'};
@@ -99,7 +100,7 @@ function renderMap(){setBackground();ctx.fillStyle='#111827';ctx.fillRect(0,0,W,
   const x=(t.x+.5)*CELL,y=(t.y+.5)*CELL,entry=catalog[t.id]||{},url=entry.url;
   const img=getImg(url);
   if(img&&img.complete&&img.naturalWidth){
-   const factor=Math.min(CELL*.86/img.naturalWidth,CELL*.86/img.naturalHeight);
+   const factor=Math.min(CELL*.97/img.naturalWidth,CELL*.97/img.naturalHeight);
    ctx.drawImage(img,x-img.naturalWidth*factor/2,y-img.naturalHeight*factor/2,
                  img.naturalWidth*factor,img.naturalHeight*factor);
   }else{

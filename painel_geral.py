@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 
 import streamlit as st
 
-from shared_backend import (shared_enabled, load_character, save_character, load_app_state,
+from shared_backend import (shared_enabled, load_character, save_character, load_app_state, save_app_state, upload_asset,
                             publish_roll, send_chat_message, get_chat_messages, clean_author,
                             config_value)
 import dice3d
@@ -93,7 +93,7 @@ def attr_value(data, name):
 
 def attr_mod(value):
     """Mesma fórmula da ficha: floor((valor - 1) / 2) - 5."""
-    return (value - 1) // 2 - 5
+    return (value - 10) // 2
 
 
 def _ceil(x):
@@ -115,7 +115,7 @@ def resources(data):
 
     def cur(key, mx):
         v = data.get(key)
-        return max(0, min(num(v, mx) if v is not None else mx, mx))
+        return max(0, num(v, mx) if v is not None else mx)
 
     return (cur("hp_atual", hpmax), hpmax, cur("mana_atual", manamax), manamax,
             cur("estamina_atual", stmax), stmax)
@@ -208,20 +208,17 @@ def cb_send_chat():
         ss["chat_feedback"] = {"level": "warning" if "Escreva" in (err or "") else "error", "text": err}
 
 
-def cb_save_resources(pid, k_hp, k_mana, k_st):
-    data = fresh(pid)                  # relê antes de gravar: não sobrescreve edições feitas na ficha
+def cb_save_resources(pid, field, widget_key):
+    """Persist only the edited resource, merging with a fresh record."""
+    data = fresh(pid)
     if not data:
-        ss["notice"] = {"level": "error", "text": "Essa ficha ainda não tem dados salvos."}
+        ss["notice"] = {"level": "error", "text": "Ficha não encontrada."}
         return
-    hpmax, manamax, stmax = maxima(data)
-    data["hp_atual"] = max(0, min(num(ss.get(k_hp)), hpmax))
-    data["mana_atual"] = max(0, min(num(ss.get(k_mana)), manamax))
-    data["estamina_atual"] = max(0, min(num(ss.get(k_st)), stmax))
+    data[field] = max(0, num(ss.get(widget_key)))
     if save_character(pid, data):
-        publish_roll("text", {"text": f"Recursos de {char_name(data, pid)} atualizados."}, "Sistema", notify=False)
-        ss["notice"] = {"level": "success", "text": "Recursos salvos."}
+        ss[f"resource_snapshot_{pid}_{field}"] = data[field]
     else:
-        ss["notice"] = {"level": "error", "text": "Não foi possível salvar os recursos no Supabase."}
+        ss["notice"] = {"level": "error", "text": "Erro ao salvar recurso."}
 
 
 def cb_reset_stamina(pid):
@@ -271,13 +268,13 @@ def missing_weapon_fields(data, wk):
     return [n for n in needed if data.get(wk + n) in (None, "")]
 
 
-def cb_attack(pid):
+def cb_attack(pid, slot=0):
     data = fresh(pid)
     if not data:
         set_error("Essa ficha ainda não tem dados salvos. Salve a ficha no app do jogador primeiro.")
         return
-    widx = ss.get(f"atk_weapon_{pid}")
-    modality = ss.get(f"atk_mod_{pid}", "Normal")
+    widx = ss.get(f"atk_weapon_{pid}_{slot}")
+    modality = ss.get(f"atk_mod_{pid}_{slot}", "Normal")
     if widx is None:
         set_error("Nenhuma arma configurada. Preencha o **nome da arma** na ficha do jogador.")
         return
@@ -337,7 +334,7 @@ def cb_attack(pid):
     dmg_line = f"Dano: {dmg_rolls} {signed(bd)} = **{base_damage}**"
     if crit:
         dmg_line += f" × {critmult} = **{damage}** (CRÍTICO)"
-    details = (f"Modalidade: {modality}\nTeste: {test} {signed(ba)} = **{attack_total}**\n{dmg_line}\n"
+    details = (f"Tipo: {modality}\nTeste: {test} {signed(ba)} = **{attack_total}**\n{dmg_line}\n"
                f"Estamina: -{cost} · restante {data['estamina_atual']}/{st_max}\n"
                "Dano não é aplicado automaticamente ao alvo.")
     payload = {"title": f"{name} — {wname}", "details": details,
@@ -419,8 +416,7 @@ def _live(seconds):
 @_live(6)
 def live_character(pid):
     render_status(pid)
-    with st.expander("Grupo", expanded=False):
-        render_party()
+
 
 
 def format_time(created_at):
@@ -500,64 +496,30 @@ def left_column(pid, chars):
     live_character(pid)
     if not data:
         return
-    hp, hpmax, mana, manamax, stam, stmax = resources(data)
-
-    with st.expander("Ajustar recursos", expanded=False):
-        k_hp = f"res_hp_{pid}_{hp}_{hpmax}"
-        k_mana = f"res_mana_{pid}_{mana}_{manamax}"
-        k_st = f"res_st_{pid}_{stam}_{stmax}"
-        c1, c2, c3 = st.columns(3)
-        c1.number_input("HP", min_value=0, max_value=hpmax, value=hp, step=1, key=k_hp)
-        c2.number_input("Mana", min_value=0, max_value=manamax, value=mana, step=1, key=k_mana)
-        c3.number_input("Est.", min_value=0, max_value=stmax, value=stam, step=1, key=k_st)
-        b1, b2 = st.columns(2)
-        b1.button("Salvar", key=f"save_res_{pid}", **STRETCH,
-                  on_click=cb_save_resources, args=(pid, k_hp, k_mana, k_st))
-        b2.button("Resetar estamina", key=f"reset_st_{pid}", **STRETCH,
-                  on_click=cb_reset_stamina, args=(pid,))
-
-    st.markdown("##### Defesas")
-    for row in (DEFENSES[:3], DEFENSES[3:]):
-        cols = st.columns(3)
-        for col, (label, key) in zip(cols, row):
-            bonus, cost = num(data.get(f"defesa_{key}_bonus")), num(data.get(f"defesa_{key}_custo"))
-            col.button(f"{label} {signed(bonus)}", key=f"def_{pid}_{key}", **STRETCH,
-                       help=f"1d20 {signed(bonus)} · custo {cost} de estamina",
-                       on_click=cb_defense, args=(pid, key, label))
-
+    st.markdown("##### Recursos")
+    cols = st.columns(3)
+    for col, (field, label) in zip(cols, (("hp_atual", "HP"), ("mana_atual", "Mana"), ("estamina_atual", "Estamina"))):
+        key = f"resource_{pid}_{field}"
+        current = max(0, num(data.get(field), 0))
+        if ss.get(f"resource_snapshot_{pid}_{field}") != current:
+            ss[key] = current
+            ss[f"resource_snapshot_{pid}_{field}"] = current
+        col.number_input(label, min_value=0, step=1, key=key,
+            on_change=cb_save_resources, args=(pid, field, key))
+    if st.button("Resetar estamina", key=f"reset_st_{pid}"):
+        cb_reset_stamina(pid)
+        st.rerun()
     st.markdown("##### Ataques")
-    weapons = []
-    for i in range(NUM_WEAPONS):
-        wname = str(data.get(f"arma_{i}_nome") or "").strip()
-        if wname and wname.lower() != "nenhuma":
-            weapons.append((i, wname))
-    if not weapons:
-        st.caption("Nenhuma arma configurada. Preencha o nome e os dados da arma na ficha do jogador.")
-        return
-    wkey = f"atk_weapon_{pid}"
-    if ss.get(wkey) not in [i for i, _ in weapons]:
-        ss.pop(wkey, None)
-    c1, c2 = st.columns([3, 2])
-    widx = c1.selectbox("Arma", [i for i, _ in weapons], key=wkey, format_func=lambda i: dict(weapons)[i])
-    modality = c2.selectbox("Modalidade", ["Normal", "Carregado", "Weapon Art"], key=f"atk_mod_{pid}")
-    wk = f"arma_{widx}_"
-    if modality == "Weapon Art":
-        st.caption(f"Custo: {num(data.get(wk + 'wa_estamina'))} estamina e {num(data.get(wk + 'wa_mana'))} mana · "
-                   "rolagens e efeito manuais.")
-    else:
-        missing = missing_weapon_fields(data, wk)
-        if missing:
-            st.warning(f"Arma sem configuração ({', '.join(missing)}). Complete na ficha do jogador.")
-        else:
-            td, tl = max(1, num(data.get(wk + "test_dados"), 1)), num(data.get(wk + "test_lados"), 20)
-            dd, dl = max(1, num(data.get(wk + "dano_dados"), 1)), num(data.get(wk + "dano_lados"), 6)
-            cost = num(data.get(wk + "custo_estamina")) * (2 if modality == "Carregado" else 1)
-            if modality == "Carregado":
-                dd *= 3
-            st.caption(f"Teste {td}d{tl}{signed(num(data.get(wk + 'bonus_ataque')))} · "
-                       f"Dano {dd}d{dl}{signed(num(data.get(wk + 'bonus_dano')))} · Estamina {cost}")
-    st.button("Executar ação", key=f"atk_run_{pid}", type="primary", **STRETCH,
-              on_click=cb_attack, args=(pid,))
+    weapons = [(i, str(data.get(f"arma_{i}_nome") or f"Arma {i+1}")) for i in range(NUM_WEAPONS)]
+    for slot in range(5):
+        c1, c2, c3 = st.columns([4, 3, 1], vertical_alignment="bottom")
+        c1.selectbox("Arma", [i for i, _ in weapons],
+                     key=f"atk_weapon_{pid}_{slot}", format_func=lambda i: dict(weapons)[i],
+                     label_visibility="collapsed")
+        c2.selectbox("Tipo", ["Normal", "Carregado", "Weapon Art"],
+                     key=f"atk_mod_{pid}_{slot}", label_visibility="collapsed")
+        c3.button("⬡", key=f"atk_run_{pid}_{slot}", type="primary",
+                  help="Rolar ataque", on_click=cb_attack, args=(pid, slot), **STRETCH)
 
 
 def scene_panel():

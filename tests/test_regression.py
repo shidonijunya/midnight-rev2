@@ -31,6 +31,27 @@ class TestCoreRules(unittest.TestCase):
             self.assertEqual(func(20), 5, name)
             self.assertEqual(func(21), 5)
 
+    def test_uploaded_token_is_persisted_by_all_sheets(self):
+        for i, name in enumerate(("Kuro", "Andrias", "Bondobo"), 1):
+            source = (ROOT / f"ficha_jogador_{i}.py").read_text(encoding="utf-8")
+            self.assertIn('"token_url",', source, name)
+            self.assertIn('render_image_editor("token"', source, name)
+
+    def test_map_uses_uploaded_token_urls_not_generic_emojis(self):
+        source = (ROOT / "tactical_map.py").read_text(encoding="utf-8")
+        self.assertIn("row.data.token_url", source)
+        self.assertIn(".mob_tokens", source)
+        self.assertIn("SEM PNG", source)
+        self.assertNotIn("entry.emoji||", source)
+
+    def test_layout_retains_shared_dice_and_scene(self):
+        source = (ROOT / "painel_geral.py").read_text(encoding="utf-8")
+        self.assertIn("shared_animation()\n        scene_panel()", source)
+        self.assertIn("render_defense_buttons(pid)", source)
+        self.assertIn("render_skill_buttons(pid)", source)
+        self.assertNotIn('st.markdown("#### Mapa tático")', source)
+        self.assertNotIn('st.markdown("#### Chefe")', source)
+
     def test_access_code_hashing(self):
         from auth_unified import hash_password, verify_password
         encoded = hash_password("test-password-muito-longa")

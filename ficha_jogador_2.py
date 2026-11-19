@@ -402,6 +402,7 @@ def build_default_state() -> dict:
         "mana_atual": None,
         "estamina_atual": None,
         "imagem_url": "",
+        "token_url": "",
     }
 
     for a in ATRIBUTOS:
@@ -616,6 +617,12 @@ def render_header():
                   st.session_state.get("imagem_url", ""), key=f"portrait_{PLAYER_ID}")
     if new_image_url != st.session_state.get("imagem_url"):
         st.session_state["imagem_url"] = new_image_url
+    with st.expander("🎯 Token do mapa (PNG transparente)", expanded=False):
+        new_token = render_image_editor("token", PLAYER_ID,
+                       st.session_state.get("token_url", ""), key=f"token_{PLAYER_ID}")
+        if new_token != st.session_state.get("token_url"):
+            st.session_state["token_url"] = new_token
+
 
 
 

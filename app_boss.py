@@ -2335,6 +2335,29 @@ def render_shared_display_controls(bosses: dict):
             boss_images[selected_name] = url
             display["boss_images"] = boss_images
             st.session_state["_boss_upload_name"] = boss_file.name
+    with st.sidebar.expander("🎯 Tokens de inimigos (Mob 1–5)", expanded=False):
+        from image_manager import prepare_image
+        from uuid import uuid4
+        mob_tokens = dict(config.get("mob_tokens", {}) or {})
+        for slot in range(1, 6):
+            token_id = f"mob_{slot}"
+            st.caption(f"Mob {slot}")
+            if mob_tokens.get(token_id):
+                st.image(mob_tokens[token_id], width=72)
+            file = st.file_uploader(f"PNG do Mob {slot}", type=["png", "webp", "jpg", "jpeg"],
+                                    key=f"mob_token_upload_{slot}")
+            if file is not None and st.button(f"Publicar Mob {slot}", key=f"mob_token_save_{slot}"):
+                try:
+                    token_bytes = prepare_image(file.getvalue(), "token")
+                    token_url = upload_asset(f"bosses/tokens/{token_id}_{uuid4().hex}.webp",
+                                             token_bytes, "image/webp")
+                    if token_url:
+                        mob_tokens[token_id] = token_url
+                        config["mob_tokens"] = mob_tokens
+                        if save_app_state("boss_config", config):
+                            st.success(f"Mob {slot} publicado no mapa.")
+                except ValueError as exc:
+                    st.error(str(exc))
     if st.sidebar.button("Publicar cena no painel", use_container_width=True):
         display.update({"mode": mode, "scene_name": scene_name, "show_scene": show_scene, "boss_images": boss_images})
         config["display"] = display

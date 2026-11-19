@@ -643,7 +643,7 @@ def tactical_grid_html(zoom=23):
       <div id="tools"><select id="token"><option value="🛡️">Jogador</option>
       <option value="🐉">Chefe</option><option value="👹">Inimigo</option></select>
       <span>Toque: token · Ctrl+arraste: medir</span></div>
-      <canvas id="map" width="460" height="460"></canvas><div id="measure"></div>
+      <div style="height:440px;overflow:auto"><canvas id="map" width="{int(zoom)*20}" height="{int(zoom)*20}"></canvas></div><div id="measure"></div>
       <script>
       const z={int(zoom)},n=20,c=document.querySelector('#map'),ctx=c.getContext('2d'),
             tokens=[],label=document.querySelector('#measure');
@@ -651,7 +651,7 @@ def tactical_grid_html(zoom=23):
       const loc=e=>{{const b=c.getBoundingClientRect(),x=(e.clientX-b.left)*c.width/b.width,
                        y=(e.clientY-b.top)*c.height/b.height;
                        return [Math.max(0,Math.min(19,Math.floor(x/z))),Math.max(0,Math.min(19,Math.floor(y/z)))];}};
-      function draw(){{ctx.clearRect(0,0,460,460);ctx.fillStyle='#1b2030';ctx.fillRect(0,0,460,460);
+      function draw(){{ctx.clearRect(0,0,c.width,c.height);ctx.fillStyle='#1b2030';ctx.fillRect(0,0,c.width,c.height);
         ctx.strokeStyle='#41475e';for(let i=0;i<=n;i++){{ctx.beginPath();ctx.moveTo(i*z,0);
         ctx.lineTo(i*z,n*z);ctx.moveTo(0,i*z);ctx.lineTo(n*z,i*z);ctx.stroke();}}
         ctx.font=Math.floor(z*.72)+'px serif';ctx.textAlign='center';
@@ -676,8 +676,9 @@ def right_column(pid, chars):
     q.number_input("Quantidade", min_value=1, max_value=MAX_QTY, key="dice_qty")
     bonus.number_input("Bônus", key="dice_bonus")
     dice_cols = st.columns(7)
+    icons = {4: "▲", 6: "■", 8: "◆", 10: "⬟", 12: "⬢", 20: "⬡", 100: "◈"}
     for col, sides in zip(dice_cols, DICE_SIDES):
-        col.button(f"⬡ d{sides}", key=f"dice_quick_{sides}",
+        col.button(f"{icons[sides]} d{sides}", key=f"dice_quick_{sides}",
                    on_click=cb_roll, args=(sides,), **STRETCH)
     with st.popover("??  Expressão personalizada", use_container_width=True):
         expression = st.text_input("Rolagem", key="custom_roll", placeholder="2d20+7")

@@ -632,40 +632,143 @@ def render_grid():
 
 
 def tactical_grid_html(zoom=23):
-    # HTML iframe: temporary local tool. Persisted multiplayer token state requires
-    # a bidirectional Streamlit component and server-enforced editing permissions.
-    return f"""<!doctype html><html><head><style>
-      body{{margin:0;background:#151720;color:#eee;font:13px sans-serif}}
-      #tools{{padding:8px;display:flex;gap:8px;align-items:center}}
-      canvas{{display:block;touch-action:none;max-width:100%;border:1px solid #363948}}
-      button,select{{background:#292b38;color:#eee;border:1px solid #515363;border-radius:6px;padding:5px}}
+    """Shared 20x20 tactical map using the EXISTING app_state table.
+
+    The legacy deployment already has public anon RLS. Only its public anon key
+    is passed to the browser; never pass the service-role secret to JavaScript.
+    Future protected deployments should use a server-authorized component.
+    """
+    import json
+    from shared_backend import auth_configured
+    api_url = str(config_value("SUPABASE_URL") or "").rstrip("/")
+    anon_key = str(config_value("SUPABASE_ANON_KEY") or "")
+    if auth_configured():
+        anon_key = ""  # Never expose unrestricted public writes in password mode.
+    markup = r"""<!doctype html><html lang="pt-BR"><head><meta charset="UTF-8"><style>
+      html,body{margin:0;background:#11141c;color:#e9e9ed;font:12px system-ui}
+      #toolbar{display:flex;gap:6px;align-items:center;padding:6px;flex-wrap:wrap}
+      #status{font-size:11px;color:#9298ab;margin-left:auto}
+      #board{height:430px;overflow:auto;background:#141827;border:1px solid #32394a;border-radius:8px}
+      canvas{display:block;touch-action:none;cursor:crosshair}
+      select,button{background:#292e3a;color:#fff;border:1px solid #525b70;padding:6px;border-radius:6px}
+      #distance{padding:5px;color:#d8bc74}
       </style></head><body>
-      <div id="tools"><select id="token"><option value="🛡️">Jogador</option>
-      <option value="🐉">Chefe</option><option value="👹">Inimigo</option></select>
-      <span>Toque: token · Ctrl+arraste: medir</span></div>
-      <div style="height:440px;overflow:auto"><canvas id="map" width="{int(zoom)*20}" height="{int(zoom)*20}"></canvas></div><div id="measure"></div>
+      <div id="toolbar"><select id="preset">
+       <option value="Kuro|🗡️">Kuro</option>
+       <option value="Andrias|🛡️">Andrias</option>
+       <option value="Bondobo|🧙">Bondobo</option>
+       <option value="Chefe|🐉">Chefe</option>
+       <option value="Inimigo|👹">Inimigo</option>
+       </select><button id="clear">Limpar mapa</button><span id="status">Conectando…</span></div>
+      <div id="board"><canvas id="board_canvas"></canvas></div>
+      <div id="distance">Clique para colocar · Arraste para mover · Ctrl+arraste para medir · Botão direito para excluir.</div>
       <script>
-      const z={int(zoom)},n=20,c=document.querySelector('#map'),ctx=c.getContext('2d'),
-            tokens=[],label=document.querySelector('#measure');
-      let from=null,to=null;
-      const loc=e=>{{const b=c.getBoundingClientRect(),x=(e.clientX-b.left)*c.width/b.width,
-                       y=(e.clientY-b.top)*c.height/b.height;
-                       return [Math.max(0,Math.min(19,Math.floor(x/z))),Math.max(0,Math.min(19,Math.floor(y/z)))];}};
-      function draw(){{ctx.clearRect(0,0,c.width,c.height);ctx.fillStyle='#1b2030';ctx.fillRect(0,0,c.width,c.height);
-        ctx.strokeStyle='#41475e';for(let i=0;i<=n;i++){{ctx.beginPath();ctx.moveTo(i*z,0);
-        ctx.lineTo(i*z,n*z);ctx.moveTo(0,i*z);ctx.lineTo(n*z,i*z);ctx.stroke();}}
-        ctx.font=Math.floor(z*.72)+'px serif';ctx.textAlign='center';
-        for(const t of tokens)ctx.fillText(t[2],(t[0]+.5)*z,(t[1]+.77)*z);
-        if(from&&to){{ctx.strokeStyle='#e9cc72';ctx.lineWidth=3;ctx.beginPath();
-        ctx.moveTo((from[0]+.5)*z,(from[1]+.5)*z);ctx.lineTo((to[0]+.5)*z,(to[1]+.5)*z);ctx.stroke();
-        const d=Math.hypot(to[0]-from[0],to[1]-from[1]);label.textContent='Distância: '+d.toFixed(1)+' quadrados';}}
-      }}
-      c.addEventListener('pointerdown',e=>{{if(e.ctrlKey){{from=loc(e);to=from;c.setPointerCapture(e.pointerId);}}
-        else {{let p=loc(e);tokens.push([...p,document.querySelector('#token').value]);draw();}}}});
-      c.addEventListener('pointermove',e=>{{if(from){{to=loc(e);draw();}}}});
-      c.addEventListener('pointerup',()=>{{from=null;to=null;draw();}});
-      draw();
+      const API=__API__, ANON=__ANON__, CELL=__CELL__, COUNT=20, WIDTH=CELL*COUNT;
+      const canvas=document.querySelector('#board_canvas'),ctx=canvas.getContext('2d');
+      canvas.width=WIDTH;canvas.height=WIDTH;
+      const status=document.querySelector('#status'),distance=document.querySelector('#distance');
+      const preset=document.querySelector('#preset'), remote=Boolean(API && ANON);
+      const URL=API+'/rest/v1/app_state?on_conflict=key';
+      const headers={'apikey':ANON,'Authorization':'Bearer '+ANON,'Content-Type':'application/json'};
+      let tokens=[],interaction=null,lastWrite=0,loading=false;
+      try{const initial=JSON.parse(localStorage.getItem('midnight_grid_20')||'[]');
+          if(Array.isArray(initial))tokens=initial;}catch(e){}
+      const point=e=>{const box=canvas.getBoundingClientRect();
+        const x=(e.clientX-box.left)*canvas.width/box.width,y=(e.clientY-box.top)*canvas.height/box.height;
+        return [Math.max(0,Math.min(19,Math.floor(x/CELL))),
+                Math.max(0,Math.min(19,Math.floor(y/CELL)))];};
+      const selected=(xy)=>tokens.find(t=>t.x===xy[0]&&t.y===xy[1]);
+      const saveLocal=()=>localStorage.setItem('midnight_grid_20',JSON.stringify(tokens));
+      function draw(){
+        ctx.fillStyle='#171c2b';ctx.fillRect(0,0,WIDTH,WIDTH);
+        ctx.strokeStyle='#354159';ctx.lineWidth=1;
+        for(let i=0;i<=20;i++){ctx.beginPath();
+          ctx.moveTo(i*CELL+.5,0);ctx.lineTo(i*CELL+.5,WIDTH);
+          ctx.moveTo(0,i*CELL+.5);ctx.lineTo(WIDTH,i*CELL+.5);ctx.stroke();}
+        ctx.font=Math.round(CELL*.70)+'px serif';ctx.textAlign='center';
+        ctx.textBaseline='middle';
+        for(const t of tokens){
+          ctx.fillStyle='#272a36';ctx.beginPath();
+          ctx.arc((t.x+.5)*CELL,(t.y+.5)*CELL,CELL*.44,0,Math.PI*2);ctx.fill();
+          ctx.fillText(t.emoji,(t.x+.5)*CELL,(t.y+.52)*CELL);
+        }
+        if(interaction && interaction.mode==='measure'){
+          const a=interaction.start,b=interaction.end||a;
+          ctx.strokeStyle='#f2d077';ctx.lineWidth=3;ctx.beginPath();
+          ctx.moveTo((a[0]+.5)*CELL,(a[1]+.5)*CELL);
+          ctx.lineTo((b[0]+.5)*CELL,(b[1]+.5)*CELL);ctx.stroke();
+          const dist=Math.hypot(b[0]-a[0],b[1]-a[1]);
+          distance.textContent='Distância: '+dist.toFixed(2)+' quadrados';
+        }
+      }
+      async function readRemote(){
+        if(!remote || loading || interaction || Date.now()-lastWrite<1400)return;
+        loading=true;
+        try{
+          const query=API+'/rest/v1/app_state?key=eq.battle_grid&select=data';
+          const response=await fetch(query,{headers:{apikey:ANON,Authorization:'Bearer '+ANON}});
+          if(!response.ok)throw Error('HTTP '+response.status);
+          const rows=await response.json(),next=(rows[0]&&rows[0].data&&rows[0].data.tokens)||[];
+          if(Array.isArray(next)){
+            tokens=next.filter(t=>Number.isInteger(t.x)&&Number.isInteger(t.y)&&
+                       t.x>=0&&t.x<20&&t.y>=0&&t.y<20).slice(0,100);
+            saveLocal();draw();
+          }
+          status.textContent='● Mapa compartilhado';
+        }catch(e){status.textContent='⚠ Sem sincronização';}
+        finally{loading=false;}
+      }
+      async function persist(){
+        saveLocal();draw();lastWrite=Date.now();
+        if(!remote){status.textContent='Mapa local';return;}
+        try{
+          const response=await fetch(URL,{method:'POST',headers:{...headers,
+              Prefer:'resolution=merge-duplicates'},body:JSON.stringify({
+              key:'battle_grid',data:{tokens},updated_at:new Date().toISOString()})});
+          if(!response.ok)throw Error('HTTP '+response.status);
+          status.textContent='● Salvo para todos';
+        }catch(e){status.textContent='⚠ Falha ao salvar mapa';}
+      }
+      canvas.addEventListener('pointerdown',e=>{
+        const xy=point(e);
+        if(e.ctrlKey){interaction={mode:'measure',start:xy,end:xy};}
+        else{const target=selected(xy);
+          if(target){interaction={mode:'move',id:target.id};}
+          else{const [name,emoji]=preset.value.split('|');
+             const id=(name==='Inimigo')?'enemy-'+Date.now()+'-'+Math.random():name;
+             const old=tokens.find(t=>t.id===id);
+             if(old){old.x=xy[0];old.y=xy[1];}
+             else tokens.push({id,name,emoji,x:xy[0],y:xy[1]});
+             interaction={mode:'place'};
+          }
+        }
+        canvas.setPointerCapture(e.pointerId);draw();
+      });
+      canvas.addEventListener('pointermove',e=>{
+        if(!interaction)return;const xy=point(e);
+        if(interaction.mode==='measure')interaction.end=xy;
+        if(interaction.mode==='move'){const t=tokens.find(t=>t.id===interaction.id);
+             if(t){t.x=xy[0];t.y=xy[1];}}
+        draw();
+      });
+      canvas.addEventListener('pointerup',async e=>{
+        if(!interaction)return;
+        const mode=interaction.mode;interaction=null;draw();
+        if(mode!=='measure')await persist();
+        else distance.textContent='Ctrl+arraste para medir outra distância.';
+      });
+      canvas.addEventListener('contextmenu',e=>{
+        e.preventDefault();const xy=point(e);
+        tokens=tokens.filter(t=>!(t.x===xy[0]&&t.y===xy[1]));persist();
+      });
+      document.querySelector('#clear').addEventListener('click',()=>{
+        if(confirm('Remover todos os tokens do mapa?')){tokens=[];persist();}
+      });
+      draw();if(remote){readRemote();setInterval(readRemote,1100);}else status.textContent='Mapa local';
       </script></body></html>"""
+    return (markup.replace("__API__", json.dumps(api_url))
+                  .replace("__ANON__", json.dumps(anon_key))
+                  .replace("__CELL__", str(max(14, min(40, int(zoom))))))
 
 
 def right_column(pid, chars):

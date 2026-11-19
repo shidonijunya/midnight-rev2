@@ -530,8 +530,6 @@ def init_session_state():
         st.session_state.setdefault(k, v)
 
     loaded = load_character(PLAYER_ID) if shared_enabled() else None
-    if not loaded:
-        loaded = load_from_disk()
     if loaded:
         apply_loaded_data(loaded)
 

@@ -421,7 +421,7 @@ def _live(seconds):
     return deco
 
 
-@_live(6)
+@_live(2)
 def live_character(pid):
     render_status(pid)
 
@@ -498,16 +498,9 @@ def render_notice():
 
 
 # ----------------------------------------------------------------- colunas
-def left_column(pid, chars):
-    data = chars.get(pid) or {}
-    st.markdown("#### Personagem")
-    if ss.get("_midnight_role") not in PLAYER_IDS:
-        st.selectbox("Personagem", PLAYER_IDS, key="sel_player", label_visibility="collapsed",
-                     format_func=lambda p: f"{PLAYER_LABELS[p]} — {char_name(chars.get(p), p)}")
-    else:
-        ss["sel_player"] = ss["_midnight_role"]
-    render_notice()
-    live_character(pid)
+@_live(2)
+def resource_editor(pid):
+    data = fresh(pid)
     if not data:
         return
     st.markdown("##### Recursos")
@@ -523,6 +516,21 @@ def left_column(pid, chars):
     if st.button("Resetar estamina", key=f"reset_st_{pid}"):
         cb_reset_stamina(pid)
         st.rerun()
+
+
+def left_column(pid, chars):
+    data = chars.get(pid) or {}
+    st.markdown("#### Personagem")
+    if ss.get("_midnight_role") not in PLAYER_IDS:
+        st.selectbox("Personagem", PLAYER_IDS, key="sel_player", label_visibility="collapsed",
+                     format_func=lambda p: f"{PLAYER_LABELS[p]} — {char_name(chars.get(p), p)}")
+    else:
+        ss["sel_player"] = ss["_midnight_role"]
+    render_notice()
+    live_character(pid)
+    if not data:
+        return
+    resource_editor(pid)
     st.markdown("##### Ataques")
     weapons = [(i, str(data.get(f"arma_{i}_nome") or f"Arma {i+1}")) for i in range(NUM_WEAPONS)]
     for slot in range(5):

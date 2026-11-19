@@ -359,7 +359,7 @@ function start() {
   var DURATION = 1500, t0 = performance.now();
   var revealed = false;
   function reveal() { if (!revealed) { revealed = true; hudFoot.style.opacity = 1; } }
-  if (played) reveal(); else hudFoot.style.opacity = 0;
+  if (played) reveal(); else { hudFoot.style.opacity = 0; if (!SPEC.idle) rollSound(); }
 
   var tmp = new THREE.Quaternion();
   function frame(now) {
@@ -382,7 +382,7 @@ function start() {
   requestAnimationFrame(frame);
 }
 
-try { start(); if (!SPEC.idle) rollSound(); } catch (err) { showFallback("Falha ao iniciar a cena 3D. Resultados mostrados em texto."); }
+try { start(); } catch (err) { showFallback("Falha ao iniciar a cena 3D. Resultados mostrados em texto."); }
 })();
 """
 

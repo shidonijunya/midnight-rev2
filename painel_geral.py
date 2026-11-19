@@ -23,7 +23,7 @@ st.markdown("""
 <style>
 .stApp {background:#101116;color:#ececf1}
 header[data-testid="stHeader"] {background:transparent;height:2rem}
-.block-container {max-width:1800px;padding-top:2.2rem;padding-bottom:1rem;padding-left:1rem;padding-right:1rem}
+.block-container {max-width:100%;padding-top:1.4rem;padding-bottom:1rem;padding-left:.75rem;padding-right:.75rem}
 h4, h5 {margin:.1rem 0 .35rem 0 !important;padding:0 !important;font-size:.95rem !important;letter-spacing:.04em;text-transform:uppercase;color:#b8bacb}
 [data-testid="stForm"] {border:none;padding:0}
 [data-testid="stVerticalBlock"] {gap:.55rem}
@@ -47,7 +47,13 @@ h4, h5 {margin:.1rem 0 .35rem 0 !important;padding:0 !important;font-size:.95rem
 .mini .bars i {display:block;height:100%}
 .chat-card {background:#1a1d27;border:1px solid #363948;border-left:3px solid #9c7bff;border-radius:8px;padding:6px 9px;margin:0 0 6px 0;font-size:.86rem}
 .chat-card.dice {border-left-color:#5488ff;background:#152238}.chat-card.attack {border-left-color:#ef4250;background:#321821;box-shadow:inset 0 0 16px #6f1f2633}.chat-card.defense {border-left-color:#45bd83;background:#142b24}
-.boss-name{text-align:center;font-family:Georgia,serif;font-size:1.6rem;font-weight:900;letter-spacing:.1em;color:#efc9aa;text-shadow:0 2px 12px #a4453f}
+.boss-name{text-align:center;font-family:"UnifrakturCook","Old English Text MT",Georgia,serif;font-size:1.55rem;font-weight:800;letter-spacing:.045em;color:#efc9aa;text-shadow:0 2px 10px #a4453f;margin:6px 0}
+.boss-image-frame{height:300px;width:100%;display:flex;justify-content:center;align-items:center;overflow:hidden;border-radius:10px;border:1px solid #34333e;background:#12141b}
+.boss-image-frame img{width:100%;height:100%;object-fit:contain;object-position:center}
+.scene-image-frame{height:285px;width:100%;display:flex;align-items:center;justify-content:center;overflow:hidden;border:1px solid #343744;border-radius:10px;background:#10141c}
+.scene-image-frame img{width:100%;height:100%;object-fit:contain}
+@media(max-width:1000px){.boss-image-frame{height:250px}.scene-image-frame{height:230px}}
+
 .boss-bar{height:18px;border-radius:12px;background:#292025;overflow:hidden;border:1px solid #5c2930}.boss-bar div{height:100%;background:linear-gradient(90deg,#731522,#ed3444);transition:width .4s}
 .boss-empty{min-height:180px;border:1px solid #282b34;border-radius:14px;background:#121318}
 div[data-testid="stButton"] button[kind="primary"] {background:#971f2d;border-color:#971f2d;color:white}
@@ -544,44 +550,50 @@ def left_column(pid, chars):
                   help="Rolar ataque", on_click=cb_attack, args=(pid, slot), **STRETCH)
 
 
-@_live(1)
+@_live(3)
 def scene_panel():
     display = load_app_state("table_display", {}) or {}
-    st.markdown("#### Cena")
+    st.markdown("##### Ilustração")
     if ss.get("_midnight_role") not in PLAYER_IDS:
-        from image_manager import render_image_editor
-        image_url = render_image_editor(
-            "scene", "table", display.get("scene_image_url", ""),
-            key="panel_scene")
-        if image_url and image_url != display.get("scene_image_url"):
-            display["scene_image_url"] = image_url
-            display["show_scene"] = True
-            config = load_app_state("boss_config", {}) or {}
-            boss_display = dict(config.get("display", {}) or {})
-            boss_display["scene_image_url"] = image_url
-            config["display"] = boss_display
-            if save_app_state("table_display", display):
-                save_app_state("boss_config", config)
-                st.success("Cena publicada.")
-    elif display.get("scene_image_url") and display.get("show_scene", True):
-        st.image(display["scene_image_url"], use_container_width=True)
+        with st.popover("📤", help="Trocar ilustração da cena"):
+            from image_manager import render_image_editor
+            image_url = render_image_editor(
+                "scene", "table", display.get("scene_image_url", ""), key="panel_scene")
+            if image_url and image_url != display.get("scene_image_url"):
+                display["scene_image_url"] = image_url
+                display["show_scene"] = True
+                config = load_app_state("boss_config", {}) or {}
+                boss_display = dict(config.get("display", {}) or {})
+                boss_display["scene_image_url"] = image_url
+                config["display"] = boss_display
+                if save_app_state("table_display", display):
+                    save_app_state("boss_config", config)
+                    st.success("Imagem publicada.")
+    if display.get("scene_image_url") and display.get("show_scene", True):
+        url = html.escape(str(display["scene_image_url"]), quote=True)
+        st.markdown(f'<div class="scene-image-frame"><img src="{url}" alt="Ilustração da cena"></div>',
+                    unsafe_allow_html=True)
     else:
-        st.markdown('<div class="boss-empty"></div>', unsafe_allow_html=True)
+        st.markdown('<div class="scene-image-frame"></div>', unsafe_allow_html=True)
 
 
-@_live(1)
+@_live(2)
 def boss_panel():
     display = load_app_state("table_display", {}) or {}
     st.markdown("#### Chefe")
     if str(display.get("mode", "Chefe")).lower() in ("chefe", "boss") and display.get("boss_name"):
         if display.get("boss_image_url"):
-            st.image(display["boss_image_url"], **STRETCH)
+            url = html.escape(str(display["boss_image_url"]), quote=True)
+            st.markdown(f'<div class="boss-image-frame"><img src="{url}" alt="Retrato do chefe"></div>',
+                        unsafe_allow_html=True)
+        else:
+            st.markdown('<div class="boss-image-frame"></div>', unsafe_allow_html=True)
         name = html.escape(str(display["boss_name"]))
         st.markdown(f'<div class="boss-name">{name}</div>', unsafe_allow_html=True)
         hp, hpmax = max(0, num(display.get("boss_hp"))), max(1, num(display.get("boss_max_hp"), 1))
         st.markdown(f'<div class="boss-bar"><div style="width:{min(100, hp / hpmax * 100):.2f}%"></div></div>', unsafe_allow_html=True)
     else:
-        st.markdown('<div class="boss-empty"></div>', unsafe_allow_html=True)
+        st.markdown('<div class="boss-image-frame"></div>', unsafe_allow_html=True)
 
 
 SKILL_ATTRIBUTES = {
@@ -628,152 +640,54 @@ def render_defenses_and_skills(pid, data):
 
 
 
-def render_grid():
-    st.markdown("#### Mapa tático 20 × 20")
-    zoom = st.slider("Zoom", min_value=14, max_value=40, value=23, key="grid_zoom")
-    # Local browser interaction for positioning preconfigured tokens, with Ctrl+drag ruler.
-    grid_html = tactical_grid_html(zoom=zoom)
-    show_html(grid_html, 490)
-
-
-def tactical_grid_html(zoom=23):
-    """Shared 20x20 tactical map using the EXISTING app_state table.
-
-    The legacy deployment already has public anon RLS. Only its public anon key
-    is passed to the browser; never pass the service-role secret to JavaScript.
-    Future protected deployments should use a server-authorized component.
-    """
-    import json
-    from shared_backend import auth_configured
-    api_url = str(config_value("SUPABASE_URL") or "").rstrip("/")
-    anon_key = str(config_value("SUPABASE_ANON_KEY") or "")
-    if auth_configured():
-        anon_key = ""  # Never expose unrestricted public writes in password mode.
-    markup = r"""<!doctype html><html lang="pt-BR"><head><meta charset="UTF-8"><style>
-      html,body{margin:0;background:#11141c;color:#e9e9ed;font:12px system-ui}
-      #toolbar{display:flex;gap:6px;align-items:center;padding:6px;flex-wrap:wrap}
-      #status{font-size:11px;color:#9298ab;margin-left:auto}
-      #board{height:430px;overflow:auto;background:#141827;border:1px solid #32394a;border-radius:8px}
-      canvas{display:block;touch-action:none;cursor:crosshair}
-      select,button{background:#292e3a;color:#fff;border:1px solid #525b70;padding:6px;border-radius:6px}
-      #distance{padding:5px;color:#d8bc74}
-      </style></head><body>
-      <div id="toolbar"><select id="preset">
-       <option value="Kuro|🗡️">Kuro</option>
-       <option value="Andrias|🛡️">Andrias</option>
-       <option value="Bondobo|🧙">Bondobo</option>
-       <option value="Chefe|🐉">Chefe</option>
-       <option value="Inimigo|👹">Inimigo</option>
-       </select><button id="clear">Limpar mapa</button><span id="status">Conectando…</span></div>
-      <div id="board"><canvas id="board_canvas"></canvas></div>
-      <div id="distance">Clique para colocar · Arraste para mover · Ctrl+arraste para medir · Botão direito para excluir.</div>
-      <script>
-      const API=__API__, ANON=__ANON__, CELL=__CELL__, COUNT=20, WIDTH=CELL*COUNT;
-      const canvas=document.querySelector('#board_canvas'),ctx=canvas.getContext('2d');
-      canvas.width=WIDTH;canvas.height=WIDTH;
-      const status=document.querySelector('#status'),distance=document.querySelector('#distance');
-      const preset=document.querySelector('#preset'), remote=Boolean(API && ANON);
-      const URL=API+'/rest/v1/app_state?on_conflict=key';
-      const headers={'apikey':ANON,'Authorization':'Bearer '+ANON,'Content-Type':'application/json'};
-      let tokens=[],interaction=null,lastWrite=0,loading=false;
-      try{const initial=JSON.parse(localStorage.getItem('midnight_grid_20')||'[]');
-          if(Array.isArray(initial))tokens=initial;}catch(e){}
-      const point=e=>{const box=canvas.getBoundingClientRect();
-        const x=(e.clientX-box.left)*canvas.width/box.width,y=(e.clientY-box.top)*canvas.height/box.height;
-        return [Math.max(0,Math.min(19,Math.floor(x/CELL))),
-                Math.max(0,Math.min(19,Math.floor(y/CELL)))];};
-      const selected=(xy)=>tokens.find(t=>t.x===xy[0]&&t.y===xy[1]);
-      const saveLocal=()=>localStorage.setItem('midnight_grid_20',JSON.stringify(tokens));
-      function draw(){
-        ctx.fillStyle='#171c2b';ctx.fillRect(0,0,WIDTH,WIDTH);
-        ctx.strokeStyle='#354159';ctx.lineWidth=1;
-        for(let i=0;i<=20;i++){ctx.beginPath();
-          ctx.moveTo(i*CELL+.5,0);ctx.lineTo(i*CELL+.5,WIDTH);
-          ctx.moveTo(0,i*CELL+.5);ctx.lineTo(WIDTH,i*CELL+.5);ctx.stroke();}
-        ctx.font=Math.round(CELL*.70)+'px serif';ctx.textAlign='center';
-        ctx.textBaseline='middle';
-        for(const t of tokens){
-          ctx.fillStyle='#272a36';ctx.beginPath();
-          ctx.arc((t.x+.5)*CELL,(t.y+.5)*CELL,CELL*.44,0,Math.PI*2);ctx.fill();
-          ctx.fillText(t.emoji,(t.x+.5)*CELL,(t.y+.52)*CELL);
-        }
-        if(interaction && interaction.mode==='measure'){
-          const a=interaction.start,b=interaction.end||a;
-          ctx.strokeStyle='#f2d077';ctx.lineWidth=3;ctx.beginPath();
-          ctx.moveTo((a[0]+.5)*CELL,(a[1]+.5)*CELL);
-          ctx.lineTo((b[0]+.5)*CELL,(b[1]+.5)*CELL);ctx.stroke();
-          const dist=Math.hypot(b[0]-a[0],b[1]-a[1]);
-          distance.textContent='Distância: '+dist.toFixed(2)+' quadrados';
-        }
-      }
-      async function readRemote(){
-        if(!remote || loading || interaction || Date.now()-lastWrite<1400)return;
-        loading=true;
-        try{
-          const query=API+'/rest/v1/app_state?key=eq.battle_grid&select=data';
-          const response=await fetch(query,{headers:{apikey:ANON,Authorization:'Bearer '+ANON}});
-          if(!response.ok)throw Error('HTTP '+response.status);
-          const rows=await response.json(),next=(rows[0]&&rows[0].data&&rows[0].data.tokens)||[];
-          if(Array.isArray(next)){
-            tokens=next.filter(t=>Number.isInteger(t.x)&&Number.isInteger(t.y)&&
-                       t.x>=0&&t.x<20&&t.y>=0&&t.y<20).slice(0,100);
-            saveLocal();draw();
-          }
-          status.textContent='● Mapa compartilhado';
-        }catch(e){status.textContent='⚠ Sem sincronização';}
-        finally{loading=false;}
-      }
-      async function persist(){
-        saveLocal();draw();lastWrite=Date.now();
-        if(!remote){status.textContent='Mapa local';return;}
-        try{
-          const response=await fetch(URL,{method:'POST',headers:{...headers,
-              Prefer:'resolution=merge-duplicates'},body:JSON.stringify({
-              key:'battle_grid',data:{tokens},updated_at:new Date().toISOString()})});
-          if(!response.ok)throw Error('HTTP '+response.status);
-          status.textContent='● Salvo para todos';
-        }catch(e){status.textContent='⚠ Falha ao salvar mapa';}
-      }
-      canvas.addEventListener('pointerdown',e=>{
-        const xy=point(e);
-        if(e.ctrlKey){interaction={mode:'measure',start:xy,end:xy};}
-        else{const target=selected(xy);
-          if(target){interaction={mode:'move',id:target.id};}
-          else{const [name,emoji]=preset.value.split('|');
-             const id=(name==='Inimigo')?'enemy-'+Date.now()+'-'+Math.random():name;
-             const old=tokens.find(t=>t.id===id);
-             if(old){old.x=xy[0];old.y=xy[1];}
-             else tokens.push({id,name,emoji,x:xy[0],y:xy[1]});
-             interaction={mode:'place'};
-          }
-        }
-        canvas.setPointerCapture(e.pointerId);draw();
-      });
-      canvas.addEventListener('pointermove',e=>{
-        if(!interaction)return;const xy=point(e);
-        if(interaction.mode==='measure')interaction.end=xy;
-        if(interaction.mode==='move'){const t=tokens.find(t=>t.id===interaction.id);
-             if(t){t.x=xy[0];t.y=xy[1];}}
-        draw();
-      });
-      canvas.addEventListener('pointerup',async e=>{
-        if(!interaction)return;
-        const mode=interaction.mode;interaction=null;draw();
-        if(mode!=='measure')await persist();
-        else distance.textContent='Ctrl+arraste para medir outra distância.';
-      });
-      canvas.addEventListener('contextmenu',e=>{
-        e.preventDefault();const xy=point(e);
-        tokens=tokens.filter(t=>!(t.x===xy[0]&&t.y===xy[1]));persist();
-      });
-      document.querySelector('#clear').addEventListener('click',()=>{
-        if(confirm('Remover todos os tokens do mapa?')){tokens=[];persist();}
-      });
-      draw();if(remote){readRemote();setInterval(readRemote,1100);}else status.textContent='Mapa local';
-      </script></body></html>"""
-    return (markup.replace("__API__", json.dumps(api_url))
-                  .replace("__ANON__", json.dumps(anon_key))
-                  .replace("__CELL__", str(max(14, min(40, int(zoom))))))
+def render_grid(chars):
+    st.markdown("#### Mapa tático")
+    config = load_app_state("battle_map_config", {}) or {}
+    is_master = ss.get("_midnight_role") not in PLAYER_IDS
+    if is_master:
+        with st.popover("🗺️ Configurar mapa", help="Imagem de fundo, corte e proporção"):
+            from image_manager import upload_map_background
+            upload = st.file_uploader("Imagem do mapa", type=["png", "jpg", "jpeg", "webp"],
+                                      key="map_background_file")
+            if upload and st.button("Publicar mapa", key="map_upload_publish"):
+                try:
+                    url = upload_map_background(upload)
+                    if url:
+                        config["image_url"] = url
+                        if save_app_state("battle_map_config", config):
+                            st.success("Mapa publicado.")
+                            st.rerun()
+                except ValueError as exc:
+                    st.error(str(exc))
+            fits = ["cover", "contain", "stretch"]
+            selected = st.selectbox("Enquadramento", fits,
+                index=fits.index(config.get("fit", "cover")) if config.get("fit", "cover") in fits else 0,
+                format_func=lambda x: {"cover": "Preencher e cortar bordas", "contain": "Mostrar imagem inteira", "stretch": "Esticar imagem"}[x],
+                key="map_fit")
+            image_zoom = st.slider("Escala da imagem", 0.25, 4.0,
+                                   float(config.get("image_zoom", 1.0)), .05, key="map_image_zoom")
+            pan_x = st.slider("Deslocamento horizontal", -1.0, 1.0,
+                              float(config.get("pan_x", 0)), .05, key="map_pan_x")
+            pan_y = st.slider("Deslocamento vertical", -1.0, 1.0,
+                              float(config.get("pan_y", 0)), .05, key="map_pan_y")
+            if st.button("Aplicar enquadramento", key="map_fit_save"):
+                config.update({"fit": selected, "image_zoom": image_zoom,
+                               "pan_x": pan_x, "pan_y": pan_y})
+                if save_app_state("battle_map_config", config):
+                    st.rerun()
+    boss_cfg = load_app_state("boss_config", {}) or {}
+    mob_urls = boss_cfg.get("mob_tokens", {}) or {}
+    catalog = {}
+    for pid in PLAYER_IDS:
+        character = chars.get(pid) or {}
+        catalog[pid] = {"label": PLAYER_LABELS[pid],
+                        "url": character.get("token_url", ""),
+                        "emoji": "🛡️"}
+    for slot in range(1, 6):
+        key = f"mob_{slot}"
+        catalog[key] = {"label": f"Mob {slot}", "url": mob_urls.get(key, ""), "emoji": "👹"}
+    from tactical_map import map_html
+    show_html(map_html(config, catalog), 565)
 
 
 def right_column(pid, chars):
@@ -792,7 +706,6 @@ def right_column(pid, chars):
         expression = st.text_input("Rolagem", key="custom_roll", placeholder="2d20+7")
         if st.button("Rolar expressão", key="run_custom", type="primary"):
             cb_roll(expression=expression)
-    shared_animation()
 
 
 def chat_composer():
@@ -865,23 +778,27 @@ def main():
     ss["_char_names"] = {pid: char_name(chars[pid], pid) for pid in PLAYER_IDS}
     pid = ss["sel_player"] if ss["sel_player"] in PLAYER_IDS else PLAYER_IDS[0]
 
-    left, center, right = st.columns([1.55, 1.0, 1.45], gap="medium")
-    with left:
+    character_col, defenses_col, communication_col, scene_col = st.columns(
+        [3.3, 1.35, 2.6, 2.25], gap="small")
+    with character_col:
         left_column(pid, chars)
-    with center:
+    with defenses_col:
         render_defenses_and_skills(pid, chars.get(pid) or {})
-    with right:
+    with communication_col:
         right_column(pid, chars)
-
-    chat_col, scene_col = st.columns([1.15, 1], gap="medium")
-    with chat_col:
         st.markdown("#### Chat da mesa")
         chat_history()
         chat_composer()
-        boss_panel()
     with scene_col:
+        shared_animation()
         scene_panel()
-        render_grid()
+
+    boss_col, map_col = st.columns([3.3, 6.2], gap="small")
+    with boss_col:
+        boss_panel()
+    with map_col:
+        render_grid(chars)
+
 
 
 if __name__ == "__main__":

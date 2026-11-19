@@ -29,7 +29,7 @@ button.active{border-color:#c5485b;background:#4a1e29}#status{margin-left:auto;c
 <span id="status">Sincronizando…</span>
 </div>
 <div id="viewport"><canvas id="canvas" width="1200" height="800"></canvas><div id="tip"></div></div>
-<div id="help">Scroll: zoom · Arrastar vazio: mover visão · Arrastar token: mover · Ctrl+arrastar: medir · Clique direito no token: excluir · Cada quadrado: 1,5 m</div>
+<div id="help">Scroll: zoom · Clique vazio: colocar token · Shift+arrastar: mover visão · Arrastar token: mover · Ctrl+arrastar: medir · Clique direito no token: excluir · Cada quadrado: 1,5 m</div>
 <script>
 const OPT=__OPTIONS__, API=OPT.api, KEY=OPT.anon, catalog=OPT.catalog||{};
 const vp=document.getElementById('viewport'),c=document.getElementById('canvas'),ctx=c.getContext('2d');
@@ -113,8 +113,8 @@ vp.addEventListener('pointerdown',e=>{
  if(e.ctrlKey||measure){action={mode:'measure',start:w,end:w};}
  else if(target){action={mode:'token',id:target.id};}
  else if(!locked&&e.shiftKey){action={mode:'map',p,panX:Number(config.pan_x)||0,panY:Number(config.pan_y)||0};}
- else if(!locked&&e.altKey){action={mode:'place',p};}
- else{action={mode:'pan',p,ox:offsetX,oy:offsetY};}
+ else if(e.shiftKey||e.button===1){action={mode:'pan',p,ox:offsetX,oy:offsetY};}
+ else{action={mode:'place',p};}
  vp.setPointerCapture(e.pointerId);vp.classList.add('drag');draw();
 });
 vp.addEventListener('pointermove',e=>{
@@ -128,7 +128,7 @@ vp.addEventListener('pointermove',e=>{
 vp.addEventListener('pointerup',e=>{
  if(!action)return;const mode=action.mode,p=position(e);
  if(mode==='place'){const id=tokenSelect.value,at=cell(p);
-   const existing=tokens.find(t=>t.id===id&&id!=='mob_1'&&id!=='mob_2'&&id!=='mob_3'&&id!=='mob_4'&&id!=='mob_5');
+   const existing=tokens.find(t=>t.id===id);
    if(existing){existing.x=at.x;existing.y=at.y;}else tokens.push({id,x:at.x,y:at.y});}
  action=null;vp.classList.remove('drag');draw();
  if(mode==='token'||mode==='place')save();

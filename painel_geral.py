@@ -540,22 +540,25 @@ def left_column(pid, chars):
 def scene_panel():
     display = load_app_state("table_display", {}) or {}
     st.markdown("#### Cena")
-    image = (st.file_uploader("Alterar cena", type=["png", "jpg", "jpeg", "webp"],
-                             key="panel_scene_image", label_visibility="collapsed")
-             if ss.get("_midnight_role") not in PLAYER_IDS else None)
-    if image is not None and st.button("Publicar imagem", key="publish_scene_image"):
-        if len(image.getvalue()) > 10 * 1024 * 1024:
-            st.error("Imagem acima de 10 MB.")
-        else:
-            url = upload_asset(f"scenes/{uuid.uuid4().hex}_{image.name}",
-                               image.getvalue(), image.type or "image/png")
-            if url:
-                display["scene_image_url"] = url
-                display["show_scene"] = True
-                if save_app_state("table_display", display):
-                    st.rerun()
-    if display.get("scene_image_url") and display.get("show_scene", True):
-        st.image(display["scene_image_url"], **STRETCH)
+    if ss.get("_midnight_role") not in PLAYER_IDS:
+        from image_manager import render_image_editor
+        image_url = render_image_editor(
+            "scene", "table", display.get("scene_image_url", ""),
+            key="panel_scene")
+        if image_url and image_url != display.get("scene_image_url"):
+            display["scene_image_url"] = image_url
+            display["show_scene"] = True
+            config = load_app_state("boss_config", {}) or {}
+            boss_display = dict(config.get("display", {}) or {})
+            boss_display["scene_image_url"] = image_url
+            config["display"] = boss_display
+            if save_app_state("table_display", display):
+                save_app_state("boss_config", config)
+                st.success("Cena publicada.")
+    elif display.get("scene_image_url") and display.get("show_scene", True):
+        st.image(display["scene_image_url"], use_container_width=True)
+    else:
+        st.markdown('<div class="boss-empty"></div>', unsafe_allow_html=True)
 
 
 @_live(1)

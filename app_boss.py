@@ -2316,7 +2316,7 @@ def render_editor_main(bosses: dict):
 def render_shared_display_controls(bosses: dict):
     """Configura o painel de cena/chefe consumido pelo painel geral."""
     if not shared_enabled():
-        st.sidebar.warning("Configure SUPABASE_URL e SUPABASE_ANON_KEY para sincronizar com o painel geral.")
+        st.sidebar.warning("Configure as credenciais Supabase para sincronizar.")
         return
     config = load_app_state("boss_config", {}) or {}
     display = config.get("display", {}) or {}
@@ -2325,13 +2325,6 @@ def render_shared_display_controls(bosses: dict):
     mode = st.sidebar.radio("Modo exibido", ["Chefe", "Cena narrativa"], index=0 if display.get("mode", "Chefe") == "Chefe" else 1, key="shared_display_mode")
     scene_name = st.sidebar.text_input("Nome da cena", value=display.get("scene_name", "Cena atual"), key="shared_scene_name")
     show_scene = st.sidebar.checkbox("Exibir imagem da cena", value=display.get("show_scene", True), key="shared_show_scene")
-    scene_file = st.sidebar.file_uploader("Imagem da cena (PNG/JPG)", type=["png", "jpg", "jpeg"], key="shared_scene_upload")
-    if scene_file is not None and st.session_state.get("_scene_upload_name") != scene_file.name:
-        mime = scene_file.type or "image/png"
-        url = upload_asset(f"scenes/{scene_file.name.replace(' ', '_')}", scene_file.getvalue(), mime)
-        if url:
-            display["scene_image_url"] = url
-            st.session_state["_scene_upload_name"] = scene_file.name
     selected_name = st.session_state.get("selected_boss", next(iter(bosses)))
     boss_file = st.sidebar.file_uploader(f"Imagem do chefe: {selected_name}", type=["png", "jpg", "jpeg"], key="shared_boss_upload")
     boss_images = display.get("boss_images", {}) or {}
@@ -2364,11 +2357,15 @@ def publish_current_boss(bosses: dict):
     config = load_app_state("boss_config", {}) or {}
     display = config.get("display", {}) or {}
     hp = st.session_state.get("boss_hp", {}).get(name, boss.max_hp)
+    previous = load_app_state("table_display", {}) or {}
+    # Keep the image uploaded directly in the table panel. The boss simulator
+    # only owns boss stats, mode and boss portrait, never the scene image.
+    scene_url = previous.get("scene_image_url") or display.get("scene_image_url", "")
     save_app_state("table_display", {
         "mode": display.get("mode", "Chefe"),
         "scene_name": display.get("scene_name", "Cena atual"),
         "show_scene": display.get("show_scene", True),
-        "scene_image_url": display.get("scene_image_url", ""),
+        "scene_image_url": scene_url,
         "boss_name": name,
         "boss_image_url": (display.get("boss_images", {}) or {}).get(name, ""),
         "boss_hp": max(0, min(int(hp), int(boss.max_hp))),

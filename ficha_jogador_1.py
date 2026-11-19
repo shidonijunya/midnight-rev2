@@ -457,7 +457,7 @@ def all_persisted_keys():
     keys = [
         "nome_personagem", "nivel", "fragmentos_essencia",
         "pontos_atributo", "requiem_atual",
-        "hp_atual", "mana_atual", "estamina_atual", "imagem_url",
+        "hp_atual", "mana_atual", "estamina_atual", "imagem_url", "token_url",
     ]
 
     for a in ATRIBUTOS:

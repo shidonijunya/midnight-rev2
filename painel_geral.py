@@ -801,15 +801,17 @@ def chat_composer():
         files = [] if isinstance(sent, str) else list(sent.files or [])
         if body:
             send_chat_message(effective_name(), body)
+        from chat_media import upload_chat_file
         for item in files:
-            if len(item.getvalue()) > 10 * 1024 * 1024:
-                st.error("Imagem acima de 10 MB.")
-                continue
-            url = upload_asset(f"chat/{uuid.uuid4().hex}_{item.name}",
-                               item.getvalue(), item.type or "image/png")
-            if url:
-                publish_roll("image", {"url": url, "name": item.name},
-                             effective_name(), notify=False)
+            try:
+                url = upload_chat_file(item)
+                if url:
+                    publish_roll("image", {"url": url, "name": item.name},
+                                 effective_name(), notify=False)
+                else:
+                    st.error("Não foi possível enviar a imagem.")
+            except ValueError as exc:
+                st.error(str(exc))
 
 
 @_live(1)

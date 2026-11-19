@@ -3,18 +3,21 @@ import math
 import os
 
 import streamlit as st
-from shared_backend import load_character, save_character, shared_enabled, upload_asset
+from shared_backend import load_character, save_character, patch_character, shared_enabled, upload_asset
 
 # ============================================================
 # CONFIGURAÇÃO DA PÁGINA
 # ============================================================
 
 st.set_page_config(
-    page_title="Ficha do Jogador 1 — Sol da Meia-Noite (Midnight Sun)",
+    page_title="Kuro — Midnight Sun",
     page_icon="🌒",
     layout="wide",
     initial_sidebar_state="expanded",
 )
+from auth_unified import require_role
+require_role("jogador_1", "mestre")
+
 
 DATA_FILE = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
@@ -255,6 +258,7 @@ DICE_SIDES_OPTIONS = [4, 6, 8, 10, 12, 20, 100]
 
 DEFESAS = {"Parry": "parry", "Rolagem": "rolagem", "Bloquear": "bloquear", "Pular": "pular", "Correr": "correr"}
 PLAYER_ID = "jogador_1"
+PLAYER_NAME = "Kuro"
 
 # Tabela de Fragmentos de Essência necessários para cada nível (1 a 99)
 XP_TABLE = {
@@ -282,8 +286,8 @@ XP_TABLE = {
 # ============================================================
 
 def modificador(valor: int) -> int:
-    """floor((atributo - 1) / 2) - 5 — usada para todos os atributos."""
-    return (valor - 1) // 2 - 5
+    """floor((atributo - 10) / 2) — usada para todos os atributos."""
+    return (valor - 10) // 2
 
 
 def bonus_nao_treinado(mod: int) -> int:
@@ -389,7 +393,7 @@ def build_default_state() -> dict:
     """Constrói o dicionário completo de valores padrão da ficha."""
 
     state = {
-        "nome_personagem": "",
+        "nome_personagem": PLAYER_NAME,
         "nivel": 1,
         "fragmentos_essencia": 0,
         "pontos_atributo": 0,
@@ -527,8 +531,6 @@ def init_session_state():
         st.session_state.setdefault(k, v)
 
     loaded = load_character(PLAYER_ID) if shared_enabled() else None
-    if not loaded:
-        loaded = load_from_disk()
     if loaded:
         apply_loaded_data(loaded)
 
@@ -550,6 +552,8 @@ def init_session_state():
         )
 
     st.session_state["ficha_inicializada"] = True
+    if shared_enabled() and not loaded:
+        save_character(PLAYER_ID, collect_state())
     st.session_state["_last_synced_snapshot"] = collect_state()
 
 
@@ -592,11 +596,6 @@ def render_header():
         '<div class="main-title">🌒 Sol da Meia-Noite</div>',
         unsafe_allow_html=True
     )
-    st.markdown(
-        '<div class="subtitle">Ficha de Personagem — Midnight Sun</div>',
-        unsafe_allow_html=True
-    )
-
     col1, col2, col3 = st.columns([2.5, 1, 1.5])
 
     with col1:
@@ -612,57 +611,13 @@ def render_header():
             "Fragmentos de Essência", min_value=0, step=1, key="fragmentos_essencia"
         )
 
-    retrato = st.file_uploader("Retrato do personagem (PNG/JPG)", type=["png", "jpg", "jpeg"], key="retrato_upload")
-    if retrato is not None and st.session_state.get("_retrato_nome_enviado") != retrato.name:
-        mime = retrato.type or ("image/png" if retrato.name.lower().endswith(".png") else "image/jpeg")
-        url = upload_asset(f"players/{PLAYER_ID}/portrait_{retrato.name.replace(' ', '_')}", retrato.getvalue(), mime) if shared_enabled() else None
-        if url:
-            st.session_state["imagem_url"] = url
-            st.session_state["_retrato_nome_enviado"] = retrato.name
-            st.success("Retrato sincronizado com o painel.")
-        elif not shared_enabled():
-            st.warning("Configure o Supabase para compartilhar o retrato com o painel.")
-    if st.session_state.get("imagem_url"):
-        st.image(st.session_state["imagem_url"], width=100)
+    from image_manager import render_image_editor
+    new_image_url = render_image_editor("portrait", PLAYER_ID,
+                  st.session_state.get("imagem_url", ""), key=f"portrait_{PLAYER_ID}")
+    if new_image_url != st.session_state.get("imagem_url"):
+        st.session_state["imagem_url"] = new_image_url
 
-    nivel_atual = st.session_state["nivel"]
-    fragmentos = st.session_state["fragmentos_essencia"]
 
-    if nivel_atual < 99:
-        custo_proximo = XP_TABLE.get(nivel_atual + 1)
-        if custo_proximo is not None and fragmentos >= custo_proximo:
-            st.markdown(
-                '<div class="levelup-box">⭐ É possível subir um nível.</div>',
-                unsafe_allow_html=True
-            )
-
-    st.caption(
-        f"Fragmentos necessários para o nível {min(nivel_atual + 1, 99)}: "
-        f"{XP_TABLE.get(min(nivel_atual + 1, 99), '—')}"
-    )
-
-    # ---------------- Pontos de atributo ----------------
-    with st.expander("🎯 Ponto de atributo por nível", expanded=False):
-        st.caption(
-            "Ao subir de nível, adicione manualmente 1 ponto disponível aqui "
-            "e escolha em qual atributo aplicá-lo."
-        )
-        c1, c2, c3 = st.columns([1, 2, 1])
-        with c1:
-            st.number_input(
-                "Pontos disponíveis", min_value=0, step=1, key="pontos_atributo"
-            )
-        with c2:
-            escolha = st.selectbox("Aplicar em", ATRIBUTOS, key="ponto_escolha_attr")
-        with c3:
-            st.write("")
-            st.button(
-                "➕ Aplicar 1 ponto",
-                use_container_width=True,
-                disabled=st.session_state["pontos_atributo"] <= 0,
-                on_click=aplicar_ponto_atributo_callback,
-                args=(escolha,),
-            )
 
 
 # ============================================================
@@ -704,27 +659,29 @@ def get_modificadores_dict():
 # ============================================================
 
 def sincronizar_recursos_compartilhados():
-    """Sincroniza só HP/mana/estamina sem sobrescrever atributos editados."""
+    """Banco prevalece em polling; mudanças locais são salvas por callback.
+    
+    Nunca reenvie um snapshot antigo a partir do fragment.
+    """
     if not shared_enabled() or not st.session_state.get("ficha_inicializada"):
         return
-    resource_keys = ["hp_atual", "mana_atual", "estamina_atual"]
-    local = {k: st.session_state.get(k) for k in resource_keys}
-    snapshot = st.session_state.get("_resource_snapshot")
     remote = load_character(PLAYER_ID)
-    remote_resources = {k: (remote or {}).get(k) for k in resource_keys}
-    if snapshot is None:
-        st.session_state["_resource_snapshot"] = local
+    if not remote:
         return
-    if local != snapshot:
-        merged = dict(remote or collect_state())
-        merged.update(local)
-        save_character(PLAYER_ID, merged)
-        st.session_state["_resource_snapshot"] = local
-    elif remote and remote_resources != snapshot:
-        for k in resource_keys:
-            if remote_resources[k] is not None:
-                st.session_state[k] = remote_resources[k]
-        st.session_state["_resource_snapshot"] = {k: st.session_state.get(k) for k in resource_keys}
+    for key in ("hp_atual", "mana_atual", "estamina_atual"):
+        if remote.get(key) is not None:
+            st.session_state[key] = remote[key]
+    st.session_state["_resource_snapshot"] = {key: st.session_state.get(key) for key in ("hp_atual", "mana_atual", "estamina_atual")}
+
+
+def persist_resource(field):
+    if not shared_enabled():
+        return
+    value = st.session_state.get(field)
+    if patch_character(PLAYER_ID, {field: value}):
+        snapshot = dict(st.session_state.get("_last_synced_snapshot", {}))
+        snapshot[field] = value
+        st.session_state["_last_synced_snapshot"] = snapshot
 
 
 @st.fragment(run_every="5s")
@@ -744,12 +701,9 @@ def render_barras():
         st.markdown('<div class="bar-container">', unsafe_allow_html=True)
         st.markdown('<div class="bar-title">❤️ Pontos de Vida</div>', unsafe_allow_html=True)
 
-        if st.session_state["hp_atual"] > hp_max:
-            st.session_state["hp_atual"] = max(hp_max, 0)
-
         st.number_input(
-            "HP atual", min_value=0, max_value=max(hp_max, 0), step=1,
-            key="hp_atual", label_visibility="collapsed"
+            "HP atual", min_value=0, step=1,
+            key="hp_atual", label_visibility="collapsed", on_change=persist_resource, args=("hp_atual",)
         )
 
         pct = (st.session_state["hp_atual"] / hp_max * 100) if hp_max else 0
@@ -770,12 +724,9 @@ def render_barras():
         st.markdown('<div class="bar-container">', unsafe_allow_html=True)
         st.markdown('<div class="bar-title">🟢 Estamina</div>', unsafe_allow_html=True)
 
-        if st.session_state["estamina_atual"] > estamina_max:
-            st.session_state["estamina_atual"] = max(estamina_max, 0)
-
         st.number_input(
-            "Estamina atual", min_value=0, max_value=max(estamina_max, 0), step=1,
-            key="estamina_atual", label_visibility="collapsed"
+            "Estamina atual", min_value=0, step=1,
+            key="estamina_atual", label_visibility="collapsed", on_change=persist_resource, args=("estamina_atual",)
         )
 
         pct_est = (st.session_state["estamina_atual"] / estamina_max * 100) if estamina_max else 0
@@ -788,7 +739,6 @@ def render_barras():
             """,
             unsafe_allow_html=True
         )
-        st.caption("O reset de estamina é feito pelo painel geral, no início de cada turno.")
         st.markdown('</div>', unsafe_allow_html=True)
 
     # ---------------- Mana ----------------
@@ -796,12 +746,9 @@ def render_barras():
         st.markdown('<div class="bar-container">', unsafe_allow_html=True)
         st.markdown('<div class="bar-title">🔵 Mana</div>', unsafe_allow_html=True)
 
-        if st.session_state["mana_atual"] > mana_max:
-            st.session_state["mana_atual"] = max(mana_max, 0)
-
         st.number_input(
-            "Mana atual", min_value=0, max_value=max(mana_max, 0), step=1,
-            key="mana_atual", label_visibility="collapsed"
+            "Mana atual", min_value=0, step=1,
+            key="mana_atual", label_visibility="collapsed", on_change=persist_resource, args=("mana_atual",)
         )
 
         pct_mana = (st.session_state["mana_atual"] / mana_max * 100) if mana_max else 0
@@ -814,7 +761,6 @@ def render_barras():
             """,
             unsafe_allow_html=True
         )
-        st.caption("O gasto de mana é manual. Nenhuma regra de recuperação foi definida.")
         st.markdown('</div>', unsafe_allow_html=True)
 
 
@@ -849,7 +795,7 @@ def render_destaques():
         st.markdown('<div class="info-box">', unsafe_allow_html=True)
         st.markdown('<div class="info-label">🌘 Réquiem ao Umbral</div>', unsafe_allow_html=True)
         st.number_input(
-            "Réquiem ao Umbral", min_value=0, max_value=100, step=1,
+            "Réquiem ao Umbral", min_value=0, step=1,
             key="requiem_atual", label_visibility="collapsed"
         )
         st.markdown(
@@ -872,7 +818,6 @@ def render_destaques():
                 '<div class="warning-box">⚠️ SOBREPESO</div>',
                 unsafe_allow_html=True
             )
-        st.caption("Peso somado das 4 peças de armadura cadastradas abaixo.")
         st.markdown('</div>', unsafe_allow_html=True)
 
 
@@ -917,12 +862,6 @@ def render_pericias():
                 sinal_b = "+" if bonus >= 0 else ""
                 st.write(f"**{sinal_b}{bonus}**")
 
-        st.caption(
-            "Bônus treinado reconstruído a partir da tabela fornecida "
-            "(mod + metade do mod arred. p/ baixo + 1). Ajuste o código se a "
-            "progressão pretendida for outra."
-        )
-
 
     # ============================================================
     # RENDER: DEFESAS
@@ -930,7 +869,6 @@ def render_pericias():
 
 def render_defesas():
     with st.expander("Defesas e movimentação", expanded=False):
-        st.caption("Informe apenas o bônus numérico (ex.: 5 para +5) e o custo de estamina de cada ação.")
         for nome, chave in DEFESAS.items():
             c1, c2, c3 = st.columns([2, 1, 1])
             with c1:
@@ -953,6 +891,39 @@ def render_armas():
         for i in range(NUM_ARMAS):
 
             keys = weapon_keys(i)
+
+            with st.popover(f"Importar JSON — arma {i + 1}"):
+                pasted = st.text_area("JSON da arma", key=f"weapon_json_{i}", height=130,
+                    placeholder='{"nome":"Espada","test_dados":1,"test_lados":20,"bonus_ataque":5,"dano_dados":2,"dano_lados":6}')
+                if st.button("Aplicar JSON", key=f"apply_weapon_json_{i}"):
+                    try:
+                        payload = json.loads(pasted)
+                        if not isinstance(payload, dict):
+                            raise ValueError("Esperado um objeto JSON.")
+                        updates = {}
+                        defaults = build_default_state()
+                        for field, statekey in keys.items():
+                            if field not in payload:
+                                continue
+                            value = payload[field]
+                            if statekey in defaults and isinstance(defaults[statekey], int):
+                                if isinstance(value, bool):
+                                    raise ValueError(f"Campo inválido: {field}")
+                                value = int(value)
+                            elif not isinstance(value, str):
+                                value = str(value)
+                            if field in ("test_lados", "dano_lados") and value not in DICE_SIDES_OPTIONS:
+                                raise ValueError(f"Dado inválido para {field}")
+                            if field in ("test_dados", "dano_dados", "crit_min", "crit_mult") and value < 1:
+                                raise ValueError(f"Valor inválido para {field}")
+                            updates[statekey] = value
+                        if not updates:
+                            raise ValueError("Nenhum campo reconhecido.")
+                        st.session_state.update(updates)
+                        st.success("Arma importada. Os campos continuam editáveis.")
+                        st.rerun()
+                    except (ValueError, TypeError, json.JSONDecodeError) as exc:
+                        st.error(f"JSON inválido: {exc}")
 
             with st.container():
                 st.markdown('<div class="weapon-card">', unsafe_allow_html=True)
@@ -1185,74 +1156,28 @@ def render_planejador_turno():
     # SIDEBAR: PERSISTÊNCIA
     # ============================================================
 
-def render_sidebar():
-
-    with st.sidebar:
-
-        st.header("💾 Salvar / Carregar Ficha")
-
-        st.caption(
-            "A ficha é salva automaticamente num arquivo local ao lado do "
-            "script (quando o sistema de arquivos permite). Para levar a "
-            "ficha para outro computador, ou usá-la num app hospedado na "
-            "web, use os botões abaixo."
-        )
-
-        dados_atuais = collect_state()
-        json_bytes = json.dumps(dados_atuais, ensure_ascii=False, indent=2).encode("utf-8")
-
-        nome_arquivo = (st.session_state.get("nome_personagem") or "personagem").strip()
-        nome_arquivo = "".join(c for c in nome_arquivo if c.isalnum() or c in (" ", "_", "-")).strip()
-        nome_arquivo = nome_arquivo.replace(" ", "_") or "personagem"
-
-        st.download_button(
-            "⬇️ Baixar Ficha (.json)",
-            data=json_bytes,
-            file_name=f"ficha_{nome_arquivo}.json",
-            mime="application/json",
-            use_container_width=True,
-        )
-
-        st.file_uploader(
-            "⬆️ Carregar Ficha (.json)",
-            type=["json"],
-            key="uploader_ficha",
-            on_change=carregar_upload_callback,
-        )
-
-        if st.session_state.get("_upload_ok") is True:
-            st.success("Ficha carregada com sucesso.")
-            st.session_state["_upload_ok"] = None
-        elif st.session_state.get("_upload_ok") is False:
-            st.error("Não foi possível ler esse arquivo. Verifique se é um .json exportado por esta ficha.")
-            st.session_state["_upload_ok"] = None
-
-        st.divider()
-
-        if st.button("🗑️ Restaurar ficha em branco", use_container_width=True):
-            for k in all_persisted_keys():
-                if k in st.session_state:
-                    del st.session_state[k]
-            if "ficha_inicializada" in st.session_state:
-                del st.session_state["ficha_inicializada"]
-            st.rerun()
 
 
-def sync_shared_state():
-    """Reconcilia edições locais com mudanças feitas no painel geral."""
+def sync_shared_state(pull=True):
+    """Only patch changed fields; never send an old copy of all resources."""
     if not shared_enabled() or not st.session_state.get("ficha_inicializada"):
         return
     current = collect_state()
     snapshot = st.session_state.get("_last_synced_snapshot", {})
-    if current != snapshot:
-        # Houve edição nesta ficha: ela tem prioridade nesta execução.
-        save_character(PLAYER_ID, current)
-        st.session_state["_last_synced_snapshot"] = current
+    resources = {"hp_atual", "mana_atual", "estamina_atual"}
+    changed = {key: value for key, value in current.items()
+               if key not in resources and snapshot.get(key) != value}
+    if changed:
+        if patch_character(PLAYER_ID, changed):
+            latest = dict(snapshot)
+            latest.update(changed)
+            st.session_state["_last_synced_snapshot"] = latest
         return
-    remote = load_character(PLAYER_ID)
-    if remote and remote != snapshot:
-        apply_loaded_data(remote)
-        st.session_state["_last_synced_snapshot"] = collect_state()
+    if pull:
+        remote = load_character(PLAYER_ID)
+        if remote:
+            apply_loaded_data(remote)
+            st.session_state["_last_synced_snapshot"] = collect_state()
 
 
 # ============================================================
@@ -1264,7 +1189,6 @@ def main():
     init_session_state()
     sync_shared_state()
 
-    render_sidebar()
     render_header()
     render_atributos()
     render_barras()
@@ -1274,16 +1198,9 @@ def main():
     render_armas()
     render_armadura()
     render_inventario()
-    render_planejador_turno()
 
-    # Autosave em disco a cada interação (best-effort; falha silenciosa se
-    # o ambiente de hospedagem não permitir escrita em disco).
-    dados = collect_state()
-    save_to_disk(dados)
-    if shared_enabled():
-        save_character(PLAYER_ID, dados)
-        st.session_state["_last_synced_snapshot"] = dados
-        st.session_state["_resource_snapshot"] = {k: dados.get(k) for k in ["hp_atual", "mana_atual", "estamina_atual"]}
+    # Persist user edits after widgets, without changing their widget state.
+    sync_shared_state(pull=False)
 
 
 if __name__ == "__main__":

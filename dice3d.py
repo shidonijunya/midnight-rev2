@@ -89,6 +89,32 @@ var hudCaption = document.getElementById("cap");
 var hudFoot = document.getElementById("foot");
 var hudNote = document.getElementById("note");
 var fallback = document.getElementById("fallback");
+var soundButton = document.getElementById("soundbtn");
+function rollSound() {
+  if (SPEC.idle) return;
+  try {
+    var AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextCtor) return;
+    var ctx = new AudioContextCtor();
+    if (ctx.state === "suspended") { ctx.close(); return; }
+    for (var i = 0; i < 7; i++) {
+      var t = ctx.currentTime + i * 0.085;
+      var oscillator = ctx.createOscillator(), gain = ctx.createGain();
+      oscillator.type = "triangle";
+      oscillator.frequency.setValueAtTime(130 + Math.random() * 160, t);
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.exponentialRampToValueAtTime(0.07, t + 0.008);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.075);
+      oscillator.connect(gain); gain.connect(ctx.destination);
+      oscillator.start(t); oscillator.stop(t + 0.08);
+    }
+    setTimeout(function(){ ctx.close(); }, 1400);
+  } catch (err) { /* Browser may block automatic audio */ }
+}
+if (soundButton) soundButton.addEventListener("click", function() {
+  rollSound(); // Explicit click is needed when browser blocks autoplay.
+});
+
 
 /* ---------- utilidades de geometria (testáveis em Node) ---------- */
 function flatten(geo) {
@@ -333,7 +359,7 @@ function start() {
   var DURATION = 1500, t0 = performance.now();
   var revealed = false;
   function reveal() { if (!revealed) { revealed = true; hudFoot.style.opacity = 1; } }
-  if (played) reveal(); else hudFoot.style.opacity = 0;
+  if (played) reveal(); else { hudFoot.style.opacity = 0; if (!SPEC.idle) rollSound(); }
 
   var tmp = new THREE.Quaternion();
   function frame(now) {
@@ -377,10 +403,11 @@ html,body{margin:0;padding:0;background:transparent;font-family:Inter,Segoe UI,A
 .chips{display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end;max-width:75%}
 .chip{font-size:11px;background:#0f1016cc;border:1px solid #444;border-radius:8px;padding:2px 7px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #note{position:absolute;top:8px;right:12px;font-size:10px;color:#e0a02f;max-width:45%;text-align:right}
+#soundbtn{position:absolute;z-index:5;right:7px;bottom:8px;background:#242733dd;color:white;border:1px solid #555b70;border-radius:8px;cursor:pointer;font-size:13px;padding:3px 8px}
 #fallback{display:none;min-height:__MINH__px;align-items:center;justify-content:center;text-align:center;padding:16px;color:#e0a02f;font-size:13px}
 </style></head>
 <body><div id="wrap" style="height:__HEIGHT__px">
-<div id="cap"></div><div id="note"></div>
+<div id="cap"></div><div id="note"></div><button id="soundbtn" title="Reproduzir som dos dados">🔊</button>
 <div id="stage" style="height:__HEIGHT__px"></div>
 <div id="fallback"></div>
 <div id="foot"></div>

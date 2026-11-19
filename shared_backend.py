@@ -17,7 +17,7 @@ def config_value(key, default=None):
 def _safe_error(exc):
     """Texto de erro sem vazar URL/chave configuradas."""
     text = str(exc)
-    for secret in (config_value("SUPABASE_ANON_KEY"), config_value("SUPABASE_URL")):
+    for secret in (config_value("SUPABASE_SERVICE_ROLE_KEY"), config_value("SUPABASE_ANON_KEY"), config_value("SUPABASE_URL")):
         if secret:
             text = text.replace(str(secret), "***")
     return text[:300]
@@ -31,7 +31,9 @@ def _cached_client(url, key):
 
 def get_client():
     url = config_value("SUPABASE_URL")
-    key = config_value("SUPABASE_ANON_KEY")
+    # Existing Streamlit apps keep working with their current anon secrets.
+    # Service-role access is opt-in and kept exclusively on the Python server.
+    key = config_value("SUPABASE_SERVICE_ROLE_KEY") or config_value("SUPABASE_ANON_KEY")
     if not url or not key:
         return None
     try:
@@ -42,7 +44,7 @@ def get_client():
 
 
 def shared_enabled():
-    return bool(config_value("SUPABASE_URL") and config_value("SUPABASE_ANON_KEY"))
+    return bool(config_value("SUPABASE_URL") and (config_value("SUPABASE_ANON_KEY") or config_value("SUPABASE_SERVICE_ROLE_KEY")))
 
 
 def get_player_id(default="jogador_1"):
@@ -50,6 +52,8 @@ def get_player_id(default="jogador_1"):
 
 
 def load_character(player_id):
+    if auth_configured() and st.session_state.get("_midnight_role") not in (player_id, "mestre"):
+        return None
     client = get_client()
     if client is None:
         return None
@@ -62,7 +66,17 @@ def load_character(player_id):
     return None
 
 
+def auth_configured():
+    try:
+        hashes = st.secrets.get("ACCESS_PASSWORD_HASHES", {})
+        return all(bool(hashes.get(k)) for k in ("jogador_1","jogador_2","jogador_3","mestre"))
+    except Exception:
+        return False
+
+
 def save_character(player_id, data):
+    if auth_configured() and st.session_state.get("_midnight_role") not in (player_id, "mestre"):
+        return False
     client = get_client()
     if client is None:
         return False
@@ -78,7 +92,47 @@ def save_character(player_id, data):
         return False
 
 
+def patch_character(player_id, changes, attempts=5):
+    """Optimistic JSONB update: preserve unrelated fields under concurrent edits."""
+    if not isinstance(changes, dict) or not changes:
+        return True
+    if auth_configured() and st.session_state.get("_midnight_role") not in (player_id, "mestre"):
+        return False
+    client = get_client()
+    if client is None:
+        return False
+    for _ in range(attempts):
+        try:
+            response = (client.table("characters").select("data,updated_at")
+                        .eq("player_id", player_id).limit(1).execute())
+            rows = response.data or []
+            if not rows:
+                initial = {"player_id": player_id, "data": dict(changes),
+                           "updated_at": datetime.now(timezone.utc).isoformat()}
+                client.table("characters").upsert(initial, on_conflict="player_id").execute()
+                return True
+            stored = rows[0]
+            merged = dict(stored.get("data") or {})
+            merged.update(changes)
+            updated = datetime.now(timezone.utc).isoformat()
+            result = (client.table("characters")
+                      .update({"data": merged, "updated_at": updated})
+                      .eq("player_id", player_id)
+                      .eq("updated_at", stored["updated_at"])
+                      .select("player_id").execute())
+            if result.data:
+                return True
+        except Exception as exc:
+            st.error(f"Erro ao atualizar recursos: {_safe_error(exc)}")
+            return False
+    st.error("Outra sessão alterou a ficha simultaneamente. Tente novamente.")
+    return False
+
+
 def load_app_state(key, default=None):
+    if auth_configured() and st.session_state.get("_midnight_role") != "mestre":
+        if key not in ("table_display", "battle_grid"):
+            return default
     client = get_client()
     if client is None:
         return default
@@ -92,6 +146,8 @@ def load_app_state(key, default=None):
 
 
 def save_app_state(key, data):
+    if auth_configured() and st.session_state.get("_midnight_role") != "mestre":
+        return False
     client = get_client()
     if client is None:
         return False
@@ -108,7 +164,18 @@ def save_app_state(key, data):
 
 
 def upload_asset(path, file_bytes, content_type="image/png"):
-    """Envia arquivo ao bucket público rpg-assets e retorna a URL pública."""
+    """Server-side assets uploader, enforcing role-specific paths."""
+    role = st.session_state.get("_midnight_role")
+    if auth_configured() and role not in ("jogador_1", "jogador_2", "jogador_3", "mestre"):
+        return None
+    if not isinstance(path, str) or ".." in path or path.startswith("/"):
+        return None
+    if auth_configured() and path.startswith(("scenes/", "bosses/")) and role != "mestre":
+        return None
+    if auth_configured() and path.startswith("players/") and role != "mestre" and not path.startswith(f"players/{role}/"):
+        return None
+    if not path.startswith(("scenes/", "bosses/", "players/", "chat/")):
+        return None
     client = get_client()
     if client is None:
         return None
@@ -123,7 +190,7 @@ def upload_asset(path, file_bytes, content_type="image/png"):
         return None
 
 
-CHAT_KINDS = ("text", "dice", "attack", "defense")
+CHAT_KINDS = ("text", "dice", "attack", "defense", "image")
 MAX_AUTHOR_LEN = 60
 MAX_TEXT_LEN = 1000
 
@@ -138,8 +205,12 @@ def _insert_chat(message_type, data, author):
     """Insere no chat. Retorna (ok, erro_legivel_ou_None). Nunca levanta exceção."""
     client = get_client()
     if client is None:
-        return False, "Supabase não configurado (SUPABASE_URL / SUPABASE_ANON_KEY)."
+        return False, "Supabase não configurado (SUPABASE_URL e chave anon ou service_role)."
     try:
+        if auth_configured():
+            role = st.session_state.get("_midnight_role")
+            author = {"jogador_1":"Kuro","jogador_2":"Andrias",
+                      "jogador_3":"Bondobo","mestre":"Mestre"}.get(role, "Mesa")
         client.table("chat_messages").insert({
             "message_type": message_type,
             "author": author,
@@ -197,6 +268,8 @@ def get_chat_messages(limit=100):
 
 
 def clear_chat_messages():
+    if auth_configured() and st.session_state.get("_midnight_role") != "mestre":
+        return False
     client = get_client()
     if client is None:
         return False

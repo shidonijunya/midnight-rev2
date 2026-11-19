@@ -40,7 +40,7 @@ create policy "public delete chat" on public.chat_messages for delete to anon, a
 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values ('rpg-assets','rpg-assets',true,10485760,array['image/png','image/jpeg','image/webp','image/gif'])
-on conflict (id) do update set public=true;
+on conflict (id) do update set public=true, allowed_mime_types=excluded.allowed_mime_types;
 drop policy if exists "public read rpg assets" on storage.objects;
 create policy "public read rpg assets" on storage.objects for select to anon, authenticated using (bucket_id = 'rpg-assets');
 drop policy if exists "public upload rpg assets" on storage.objects;

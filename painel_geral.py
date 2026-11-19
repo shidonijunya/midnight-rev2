@@ -49,7 +49,7 @@ h4, h5 {margin:.1rem 0 .35rem 0 !important;padding:0 !important;font-size:.95rem
 .chat-card {background:#1a1d27;border:1px solid #363948;border-left:3px solid #9c7bff;border-radius:8px;padding:6px 9px;margin:0 0 6px 0;font-size:.86rem}
 .chat-card.dice {border-left-color:#5488ff;background:#152238}.chat-card.attack {border-left-color:#ef4250;background:#321821;box-shadow:inset 0 0 16px #6f1f2633}.chat-card.defense {border-left-color:#45bd83;background:#142b24}
 .boss-name{text-align:center;font-family:"UnifrakturCook","Old English Text MT",Georgia,serif;font-size:1.55rem;font-weight:800;letter-spacing:.045em;color:#efc9aa;text-shadow:none;margin:6px 0}
-.boss-image-frame{height:390px;width:100%;display:flex;justify-content:center;align-items:center;overflow:hidden;border-radius:10px;border:1px solid #34333e;background:#12141b}
+.boss-image-frame{height:460px;width:100%;display:flex;justify-content:center;align-items:center;overflow:hidden;border-radius:10px;border:1px solid #34333e;background:#12141b}
 .boss-image-frame{position:relative;isolation:isolate}
 .boss-image-frame .boss-backdrop{position:absolute;inset:-12px;width:calc(100% + 24px);height:calc(100% + 24px);object-fit:cover;filter:blur(18px) brightness(.35);opacity:.75;z-index:-1}
 .boss-image-frame .boss-focus{display:block;max-width:100%;height:100%;width:auto;object-fit:contain;object-position:center;margin:auto}
@@ -63,7 +63,7 @@ h4, h5 {margin:.1rem 0 .35rem 0 !important;padding:0 !important;font-size:.95rem
 .boss-image-frame img{width:100%;height:100%;object-fit:contain;object-position:center}
 .scene-image-frame{height:285px;width:100%;display:flex;align-items:center;justify-content:center;overflow:hidden;border:1px solid #343744;border-radius:10px;background:#10141c}
 .scene-image-frame img{width:100%;height:100%;object-fit:contain}
-@media(max-width:1000px){.boss-image-frame{height:310px}.scene-image-frame{height:230px}}
+@media(max-width:1000px){.boss-image-frame{height:410px}.scene-image-frame{height:230px}}
 
 .boss-bar{height:18px;border-radius:12px;background:#292025;overflow:hidden;border:1px solid #5c2930}.boss-bar div{height:100%;background:linear-gradient(90deg,#731522,#ed3444);transition:width .4s}
 .boss-empty{min-height:180px;border:1px solid #282b34;border-radius:14px;background:#121318}

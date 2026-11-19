@@ -18,6 +18,9 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+from auth_unified import require_role
+require_role("mestre")
+
 
 
 # ============================================================

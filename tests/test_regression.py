@@ -79,6 +79,16 @@ class TestCoreRules(unittest.TestCase):
             self.assertEqual(token.convert("RGBA").getpixel((0, 0))[3], 0)
             self.assertEqual(token.convert("RGBA").getpixel((40, 40)), (255, 0, 0, 255))
 
+    def test_parry_sound_is_character_specific(self):
+        panel = (ROOT / "painel_geral.py").read_text(encoding="utf-8")
+        stage = (ROOT / "dice3d.py").read_text(encoding="utf-8")
+        self.assertIn('"player_id": pid, "defense_key": key', panel)
+        self.assertIn('data.get("defense_key") == "parry"', panel)
+        self.assertIn('("jogador_1", "Kuro — Sekiro")', panel)
+        self.assertIn('("jogador_2", "Andrias — Bloodborne")', panel)
+        self.assertIn('SPEC.sound_kind === "parry"', stage)
+        self.assertIn('new Audio(SPEC.sound_url)', stage)
+
     def test_bottom_ratio_and_simple_dice_labels(self):
         source = (ROOT / "painel_geral.py").read_text(encoding="utf-8")
         self.assertIn("st.columns([4.15, 6.15]", source)

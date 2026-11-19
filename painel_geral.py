@@ -179,28 +179,35 @@ def set_error(*lines):
 
 
 # ----------------------------------------------------------------- callbacks (executam uma única vez por clique)
-def cb_roll():
-    qty = max(1, min(MAX_QTY, num(ss.get("dice_qty"), 1)))
-    sides = num(ss.get("dice_sides"), 20)
-    if sides not in DICE_SIDES:
-        sides = 20
-    bonus = num(ss.get("dice_bonus"), 0)
+def cb_roll(sides=None, expression=None):
+    """Roll fixed die or safe NdM+K syntax without evaluating arbitrary code."""
+    if expression is not None:
+        matched = re.fullmatch(r"\s*(\d{1,3})d(4|6|8|10|12|20|100)\s*([+-]\s*\d{1,4})?\s*", expression, re.I)
+        if not matched:
+            set_error("Digite uma expressão como 2d20+7, 1d8 ou 3d6-2.")
+            return
+        qty, sides = int(matched.group(1)), int(matched.group(2))
+        bonus = int((matched.group(3) or "0").replace(" ", ""))
+    else:
+        qty = max(1, min(MAX_QTY, num(ss.get("dice_qty"), 1)))
+        sides = sides or num(ss.get("dice_sides"), 20)
+        bonus = num(ss.get("dice_bonus"), 0)
+    if qty < 1 or qty > MAX_QTY or sides not in DICE_SIDES:
+        set_error("Quantidade ou tipo de dado inválido.")
+        return
     who = effective_name()
     results = roll_dice(qty, sides)
     total = sum(results) + bonus
     label = f"{qty}d{sides}{signed(bonus) if bonus else ''}"
-    shown = results if len(results) <= 20 else results[:20]
-    more = " …" if len(results) > 20 else ""
-    details = f"Rolagem: {label}\nDados: {shown}{more}\nTotal: **{total}**"
+    shown = results[:20]
+    details = f"Rolagem: {label}\nDados: {shown}{' …' if len(results) > 20 else ''}\nTotal: **{total}**"
     payload = {"title": f"{who} — {label}", "details": details,
-               "dice": {"sides": sides, "qty": qty, "bonus": bonus, "total": total, "results": shown}}
+               "dice": {"sides": sides, "qty": qty, "bonus": bonus, "total": total, "results": results[:40]}}
     ok = publish_roll("dice", payload, who, notify=False)
     set_result(kind="dice", caption=f"{who} — {label}",
                groups=[{"label": "", "sides": sides, "values": results}],
                totals=[{"label": "Total", "value": total}],
-               lines=[f"**{who}** rolou **{label}**: {shown}{more}"
-                      f"{(' ' + signed(bonus)) if bonus else ''} = **{total}**"],
-               published=ok)
+               lines=[details], published=ok)
 
 
 def cb_send_chat():
@@ -443,6 +450,9 @@ def message_html(msg):
     data = msg.get("data") or {}
     who = html.escape(str(msg.get("author") or "Mesa"))
     when = format_time(msg.get("created_at"))
+    if typ == "image":
+        url = html.escape(str(data.get("url") or ""), quote=True)
+        return f'<div class="chat-card"><div class="chat-head"><b>{who}</b><span>{when}</span></div><img src="{url}" style="max-width:100%;max-height:280px;object-fit:contain;border-radius:8px"></div>'
     if typ == "text":
         return (f'<div class="chat-card"><div class="chat-head"><b>{who}</b><span>{when}</span></div>'
                 f'{fmt(data.get("text", ""))}</div>')
@@ -456,7 +466,7 @@ def message_html(msg):
 @_live(4)
 def chat_history():
     messages = get_chat_messages(60)
-    with st.container(height=360, border=True):
+    with st.container(height=440, border=True):
         if not messages:
             st.caption("As mensagens e rolagens compartilhadas aparecerão aqui.")
         else:
@@ -636,29 +646,70 @@ def tactical_grid_html(zoom=23):
 
 def right_column(pid, chars):
     st.markdown("#### Rolador de dados")
-    ctrl, stage = st.columns([1, 2.1])
-    with ctrl:
-        st.text_input("Seu nome na mesa", key="display_name", placeholder=char_name(chars.get(pid), pid),
-                      help="Aparece nas rolagens e no chat. Se ficar vazio, usa o nome do personagem selecionado.")
-        q1, q2 = st.columns(2)
-        q1.number_input("Qtd.", min_value=1, max_value=MAX_QTY, step=1, key="dice_qty")
-        q2.selectbox("Dado", DICE_SIDES, key="dice_sides", format_func=lambda x: f"d{x}")
-        st.number_input("Bônus", step=1, key="dice_bonus")
-        st.button("🎲 Rolar", type="primary", **STRETCH, key="dice_roll", on_click=cb_roll)
-    with stage:
-        render_result()
+    st.text_input("Nome na mesa", key="display_name",
+                  placeholder=char_name(chars.get(pid), pid))
+    q, bonus = st.columns(2)
+    q.number_input("Quantidade", min_value=1, max_value=MAX_QTY, key="dice_qty")
+    bonus.number_input("Bônus", key="dice_bonus")
+    dice_cols = st.columns(7)
+    for col, sides in zip(dice_cols, DICE_SIDES):
+        col.button(f"⬡ d{sides}", key=f"dice_quick_{sides}",
+                   on_click=cb_roll, args=(sides,), **STRETCH)
+    with st.popover("??  Expressão personalizada", use_container_width=True):
+        expression = st.text_input("Rolagem", key="custom_roll", placeholder="2d20+7")
+        if st.button("Rolar expressão", key="run_custom", type="primary"):
+            cb_roll(expression=expression)
+    shared_animation()
+    st.markdown("#### Enviar mensagem")
+    try:
+        sent = st.chat_input("Mensagem, imagem ou GIF (Enter para enviar)",
+                             accept_file="multiple",
+                             file_type=["png", "jpeg", "jpg", "webp", "gif"],
+                             key="rich_chat_input")
+    except TypeError:
+        sent = st.chat_input("Digite mensagem e pressione Enter", key="rich_chat_fallback")
+    if sent:
+        body = sent if isinstance(sent, str) else sent.text
+        files = [] if isinstance(sent, str) else list(sent.files or [])
+        if body:
+            send_chat_message(effective_name(), body)
+        for item in files:
+            if len(item.getvalue()) > 10 * 1024 * 1024:
+                st.error("Imagem acima de 10 MB.")
+                continue
+            url = upload_asset(f"chat/{uuid.uuid4().hex}_{item.name}",
+                               item.getvalue(), item.type or "image/png")
+            if url:
+                publish_roll("image", {"url": url, "name": item.name},
+                             effective_name(), notify=False)
 
-    st.markdown("#### Chat da mesa")
-    with st.form("chat_form", clear_on_submit=False):
-        c1, c2 = st.columns([5, 1])
-        c1.text_input("Mensagem", key="chat_msg", placeholder="Escreva para a mesa e tecle Enter…",
-                      label_visibility="collapsed")
-        c2.form_submit_button("Enviar", **STRETCH, on_click=cb_send_chat)
-    fb = ss.get("chat_feedback")
-    if fb:
-        getattr(st, fb["level"], st.error)(fb["text"])
-    chat_history()
-    scene_panel()
+
+@_live(1)
+def shared_animation():
+    """Every connected panel fetches recent rolls for a shared dice stage."""
+    messages = get_chat_messages(20)
+    rolls = [m for m in messages if m.get("message_type") in ("dice", "attack", "defense")]
+    if rolls:
+        latest = rolls[-1]
+        data = latest.get("data") or {}
+        die = data.get("dice", {})
+        if "sides" in die and die.get("results"):
+            spec = dice3d.build_spec(str(latest["id"]), str(data.get("title") or ""),
+                [{"label": "", "sides": die["sides"], "values": die["results"]}],
+                totals=[{"label": "Total", "value": die.get("total", 0)}])
+            show_html(dice3d.stage_html(spec, height=240), 245)
+            return
+        if die.get("attack"):
+            attack, damage = die["attack"], die.get("damage", {})
+            groups = [{"label": "Ataque", "sides": attack["sides"], "values": attack.get("results", [])}]
+            if damage.get("sides"):
+                groups.append({"label": "Dano", "sides": damage["sides"],
+                               "values": damage.get("results", [])})
+            spec = dice3d.build_spec(str(latest["id"]), str(data.get("title") or ""),
+                                     groups)
+            show_html(dice3d.stage_html(spec, height=240), 245)
+            return
+    show_html(dice3d.stage_html(dice3d.idle_spec(), height=240), 245)
 
 
 def main():

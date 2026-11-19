@@ -152,15 +152,9 @@ def fmt(text):
 
 
 def show_html(html_str, height):
-    """Incorpora HTML/JS: st.iframe nas versões novas, components.html nas antigas."""
-    if hasattr(st, "iframe"):
-        try:
-            st.iframe(html_str, height=height)
-            return
-        except Exception:
-            pass
+    """Render HTML inside a Streamlit component, not as an iframe URL."""
     import streamlit.components.v1 as components
-    components.html(html_str, height=height)
+    components.html(html_str, height=height, scrolling=False)
 
 
 def effective_name():

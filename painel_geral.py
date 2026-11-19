@@ -43,7 +43,11 @@ h4, h5 {margin:.1rem 0 .35rem 0 !important;padding:0 !important;font-size:.95rem
 .mini .bars div {height:5px;background:#2b2d38;border-radius:4px;margin:2px 0;overflow:hidden}
 .mini .bars i {display:block;height:100%}
 .chat-card {background:#1a1d27;border:1px solid #363948;border-left:3px solid #9c7bff;border-radius:8px;padding:6px 9px;margin:0 0 6px 0;font-size:.86rem}
-.chat-card.dice {border-left-color:#5488ff}.chat-card.attack {border-left-color:#d83342}.chat-card.defense {border-left-color:#45bd83}
+.chat-card.dice {border-left-color:#5488ff;background:#152238}.chat-card.attack {border-left-color:#ef4250;background:#321821;box-shadow:inset 0 0 16px #6f1f2633}.chat-card.defense {border-left-color:#45bd83;background:#142b24}
+.boss-name{text-align:center;font-family:Georgia,serif;font-size:1.6rem;font-weight:900;letter-spacing:.1em;color:#efc9aa;text-shadow:0 2px 12px #a4453f}
+.boss-bar{height:18px;border-radius:12px;background:#292025;overflow:hidden;border:1px solid #5c2930}.boss-bar div{height:100%;background:linear-gradient(90deg,#731522,#ed3444);transition:width .4s}
+.boss-empty{min-height:180px;border:1px solid #282b34;border-radius:14px;background:#121318}
+div[data-testid="stButton"] button[kind="primary"] {background:#971f2d;border-color:#971f2d;color:white}
 .chat-head {display:flex;justify-content:space-between;font-size:.72rem;color:#9a9db0;margin-bottom:2px}
 .chat-head b {color:#d7d9e6}
 .chat-title {font-weight:800;font-size:.9rem;margin-bottom:2px}
@@ -522,29 +526,112 @@ def left_column(pid, chars):
                   help="Rolar ataque", on_click=cb_attack, args=(pid, slot), **STRETCH)
 
 
+@_live(1)
 def scene_panel():
     display = load_app_state("table_display", {}) or {}
-    if not display.get("show_scene", True):
+    st.markdown("#### Cena")
+    image = st.file_uploader("Alterar cena", type=["png", "jpg", "jpeg", "webp"],
+                             key="panel_scene_image", label_visibility="collapsed")
+    if image is not None and st.button("Publicar imagem", key="publish_scene_image"):
+        if len(image.getvalue()) > 10 * 1024 * 1024:
+            st.error("Imagem acima de 10 MB.")
+        else:
+            url = upload_asset(f"scenes/{uuid.uuid4().hex}_{image.name}",
+                               image.getvalue(), image.type or "image/png")
+            if url:
+                display["scene_image_url"] = url
+                display["show_scene"] = True
+                if save_app_state("table_display", display):
+                    st.rerun()
+    if display.get("scene_image_url") and display.get("show_scene", True):
+        st.image(display["scene_image_url"], **STRETCH)
+
+
+@_live(1)
+def boss_panel():
+    display = load_app_state("table_display", {}) or {}
+    st.markdown("#### Chefe")
+    if str(display.get("mode", "Chefe")).lower() in ("chefe", "boss") and display.get("boss_name"):
+        if display.get("boss_image_url"):
+            st.image(display["boss_image_url"], **STRETCH)
+        name = html.escape(str(display["boss_name"]))
+        st.markdown(f'<div class="boss-name">{name}</div>', unsafe_allow_html=True)
+        hp, hpmax = max(0, num(display.get("boss_hp"))), max(1, num(display.get("boss_max_hp"), 1))
+        st.markdown(f'<div class="boss-bar"><div style="width:{min(100, hp / hpmax * 100):.2f}%"></div></div>', unsafe_allow_html=True)
+    else:
+        st.markdown('<div class="boss-empty"></div>', unsafe_allow_html=True)
+
+
+def cb_skill(pid, skill):
+    data = fresh(pid)
+    if not data:
         return
-    has_content = bool(display.get("scene_image_url") or display.get("boss_name"))
-    with st.expander("Cena e chefe", expanded=has_content):
-        c1, c2 = st.columns([2, 1])
-        with c1:
-            if display.get("scene_image_url"):
-                st.image(display["scene_image_url"], **STRETCH)
-            else:
-                st.caption("Cena sem imagem configurada.")
-        with c2:
-            st.markdown(f"**{html.escape(str(display.get('scene_name') or 'Cena atual'))}**", unsafe_allow_html=True)
-            if str(display.get("mode", "Chefe")).lower() in ("chefe", "boss") and display.get("boss_name"):
-                if display.get("boss_image_url"):
-                    st.image(display["boss_image_url"], **STRETCH)
-                st.markdown(f"**{html.escape(str(display['boss_name']))}**", unsafe_allow_html=True)
-                hp, hpmax = max(0, num(display.get("boss_hp"))), max(1, num(display.get("boss_max_hp"), 1))
-                st.markdown(f'<div class="res" style="grid-template-columns:1fr"><div class="rb">'
-                            f'<i style="width:{min(100, hp / hpmax * 100):.1f}%;background:#d83342"></i></div></div>',
-                            unsafe_allow_html=True)
-                st.caption("Vida do chefe (valor numérico oculto)")
+    value = roll_dice(1, 20)[0]
+    details = f"Perícia: {skill}\nDado: 1d20 → **{value}**"
+    publish_roll("dice", {"title": f"{char_name(data,pid)} — {skill}", "details": details,
+                          "dice": {"sides": 20, "results": [value], "total": value}},
+                 effective_name(), notify=False)
+
+
+def render_defenses_and_skills(pid, data):
+    dcol, scol = st.columns(2)
+    with dcol:
+        st.markdown("##### Defesas")
+        for label, key in DEFENSES:
+            st.button(label, key=f"def_{pid}_{key}", **STRETCH,
+                      on_click=cb_defense, args=(pid, key, label))
+    with scol:
+        st.markdown("##### Perícias")
+        trained = [(k[len("pericia_"):], v) for k, v in data.items()
+                   if k.startswith("pericia_") and v is True]
+        for skill, _ in trained:
+            st.button(skill.replace("_", " "), key=f"skill_{pid}_{skill}", **STRETCH,
+                      on_click=cb_skill, args=(pid, skill))
+
+
+def render_grid():
+    st.markdown("#### Mapa tático 20 × 20")
+    zoom = st.slider("Zoom", min_value=14, max_value=40, value=23, key="grid_zoom")
+    # Local browser interaction for positioning preconfigured tokens, with Ctrl+drag ruler.
+    grid_html = tactical_grid_html(zoom=zoom)
+    show_html(grid_html, 490)
+
+
+def tactical_grid_html(zoom=23):
+    # HTML iframe: temporary local tool. Persisted multiplayer token state requires
+    # a bidirectional Streamlit component and server-enforced editing permissions.
+    return f"""<!doctype html><html><head><style>
+      body{{margin:0;background:#151720;color:#eee;font:13px sans-serif}}
+      #tools{{padding:8px;display:flex;gap:8px;align-items:center}}
+      canvas{{display:block;touch-action:none;max-width:100%;border:1px solid #363948}}
+      button,select{{background:#292b38;color:#eee;border:1px solid #515363;border-radius:6px;padding:5px}}
+      </style></head><body>
+      <div id="tools"><select id="token"><option value="🛡️">Jogador</option>
+      <option value="🐉">Chefe</option><option value="👹">Inimigo</option></select>
+      <span>Toque: token · Ctrl+arraste: medir</span></div>
+      <canvas id="map" width="460" height="460"></canvas><div id="measure"></div>
+      <script>
+      const z={int(zoom)},n=20,c=document.querySelector('#map'),ctx=c.getContext('2d'),
+            tokens=[],label=document.querySelector('#measure');
+      let from=null,to=null;
+      const loc=e=>{{const b=c.getBoundingClientRect(),x=(e.clientX-b.left)*c.width/b.width,
+                       y=(e.clientY-b.top)*c.height/b.height;
+                       return [Math.max(0,Math.min(19,Math.floor(x/z))),Math.max(0,Math.min(19,Math.floor(y/z)))];}};
+      function draw(){{ctx.clearRect(0,0,460,460);ctx.fillStyle='#1b2030';ctx.fillRect(0,0,460,460);
+        ctx.strokeStyle='#41475e';for(let i=0;i<=n;i++){{ctx.beginPath();ctx.moveTo(i*z,0);
+        ctx.lineTo(i*z,n*z);ctx.moveTo(0,i*z);ctx.lineTo(n*z,i*z);ctx.stroke();}}
+        ctx.font=Math.floor(z*.72)+'px serif';ctx.textAlign='center';
+        for(const t of tokens)ctx.fillText(t[2],(t[0]+.5)*z,(t[1]+.77)*z);
+        if(from&&to){{ctx.strokeStyle='#e9cc72';ctx.lineWidth=3;ctx.beginPath();
+        ctx.moveTo((from[0]+.5)*z,(from[1]+.5)*z);ctx.lineTo((to[0]+.5)*z,(to[1]+.5)*z);ctx.stroke();
+        const d=Math.hypot(to[0]-from[0],to[1]-from[1]);label.textContent='Distância: '+d.toFixed(1)+' quadrados';}}
+      }}
+      c.addEventListener('pointerdown',e=>{{if(e.ctrlKey){{from=loc(e);to=from;c.setPointerCapture(e.pointerId);}}
+        else {{let p=loc(e);tokens.push([...p,document.querySelector('#token').value]);draw();}}}});
+      c.addEventListener('pointermove',e=>{{if(from){{to=loc(e);draw();}}}});
+      c.addEventListener('pointerup',()=>{{from=null;to=null;draw();}});
+      draw();
+      </script></body></html>"""
 
 
 def right_column(pid, chars):
@@ -589,11 +676,22 @@ def main():
     ss["_char_names"] = {pid: char_name(chars[pid], pid) for pid in PLAYER_IDS}
     pid = ss["sel_player"] if ss["sel_player"] in PLAYER_IDS else PLAYER_IDS[0]
 
-    left, right = st.columns([1, 2.05], gap="medium")
+    left, center, right = st.columns([1.55, 1.0, 1.45], gap="medium")
     with left:
         left_column(pid, chars)
+    with center:
+        render_defenses_and_skills(pid, chars.get(pid) or {})
     with right:
         right_column(pid, chars)
+
+    chat_col, scene_col = st.columns([1.15, 1], gap="medium")
+    with chat_col:
+        st.markdown("#### Chat da mesa")
+        chat_history()
+        boss_panel()
+    with scene_col:
+        scene_panel()
+        render_grid()
 
 
 if __name__ == "__main__":

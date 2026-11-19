@@ -572,15 +572,33 @@ def boss_panel():
         st.markdown('<div class="boss-empty"></div>', unsafe_allow_html=True)
 
 
+SKILL_ATTRIBUTES = {
+    "Malandragem": ["Destreza", "Carisma"],
+    "Herbalismo": ["Inteligência", "Sabedoria"],
+    "Aura": ["Carisma"],
+    "Mente": ["Sabedoria"],
+    "Conhecimento": ["Inteligência", "Sabedoria"],
+    "Instinto": ["Destreza"],
+    "Fibra": ["Força", "Destreza"],
+}
+
+
 def cb_skill(pid, skill):
     data = fresh(pid)
-    if not data:
+    if not data or skill not in SKILL_ATTRIBUTES:
         return
+    mod = max(attr_mod(attr_value(data, name)) for name in SKILL_ATTRIBUTES[skill])
+    trained = bool(data.get(f"pericia_{skill}"))
+    bonus = mod + (mod // 2) + 1 if trained else mod // 2
     value = roll_dice(1, 20)[0]
-    details = f"Perícia: {skill}\nDado: 1d20 → **{value}**"
-    publish_roll("dice", {"title": f"{char_name(data,pid)} — {skill}", "details": details,
-                          "dice": {"sides": 20, "results": [value], "total": value}},
-                 effective_name(), notify=False)
+    total = value + bonus
+    details = f"Perícia: {skill}\nTeste: 1d20 ({value}) {signed(bonus)} = **{total}**"
+    ok = publish_roll("dice", {"title": f"{char_name(data,pid)} — {skill}",
+                  "details": details, "dice": {"sides": 20, "results": [value], "total": total}},
+                  effective_name(), notify=False)
+    set_result(kind="dice", caption=skill,
+               groups=[{"label": skill, "sides": 20, "values": [value]}],
+               totals=[{"label": "Total", "value": total}], lines=[details], published=ok)
 
 
 def render_defenses_and_skills(pid, data):
@@ -592,11 +610,10 @@ def render_defenses_and_skills(pid, data):
                       on_click=cb_defense, args=(pid, key, label))
     with scol:
         st.markdown("##### Perícias")
-        trained = [(k[len("pericia_"):], v) for k, v in data.items()
-                   if k.startswith("pericia_") and v is True]
-        for skill, _ in trained:
-            st.button(skill.replace("_", " "), key=f"skill_{pid}_{skill}", **STRETCH,
+        for skill in SKILL_ATTRIBUTES:
+            st.button(skill, key=f"skill_{pid}_{skill}", **STRETCH,
                       on_click=cb_skill, args=(pid, skill))
+
 
 
 def render_grid():

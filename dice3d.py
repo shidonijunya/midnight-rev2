@@ -90,41 +90,89 @@ var hudFoot = document.getElementById("foot");
 var hudNote = document.getElementById("note");
 var fallback = document.getElementById("fallback");
 var soundButton = document.getElementById("soundbtn");
+var currentClip = null;
+var normalContext = null;
+
+function markAudioBlocked() {
+  if (soundButton) {
+    soundButton.title = "Navegador bloqueou o áudio automático. Clique aqui para ouvir.";
+    soundButton.style.borderColor = "#d29a46";
+  }
+}
+
+function playDefaultDiceSound() {
+  try {
+    var AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextCtor) return;
+    var ctx = normalContext || new AudioContextCtor();
+    normalContext = ctx;
+    function scheduleRattle() {
+      if (ctx.state !== "running") { markAudioBlocked(); return; }
+      for (var i = 0; i < 7; i++) {
+        var t = ctx.currentTime + i * 0.085;
+        var oscillator = ctx.createOscillator(), gain = ctx.createGain();
+        oscillator.type = "triangle";
+        oscillator.frequency.setValueAtTime(130 + Math.random() * 160, t);
+        gain.gain.setValueAtTime(0.0001, t);
+        gain.gain.exponentialRampToValueAtTime(0.07, t + 0.008);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.075);
+        oscillator.connect(gain); gain.connect(ctx.destination);
+        oscillator.start(t); oscillator.stop(t + 0.08);
+      }
+    }
+    if (ctx.state === "suspended") {
+      // Previously returned silently; resume asynchronously when the browser permits it.
+      ctx.resume().then(scheduleRattle).catch(markAudioBlocked);
+    } else {
+      scheduleRattle();
+    }
+  } catch (err) {
+    markAudioBlocked();
+  }
+}
+
 function rollSound() {
   if (SPEC.idle) return;
   if (SPEC.sound_kind === "parry" && SPEC.sound_url) {
     try {
-      var clip = new Audio(SPEC.sound_url);
-      clip.volume = 0.8;
-      clip.play().catch(function(){ 
-        if (soundButton) soundButton.title = "Clique para ouvir o Parry (reprodução automática bloqueada)";
-      });
-    } catch (err) { /* Missing or blocked media: dice animation still works. */ }
-    return;
-  }
-  try {
-    var AudioContextCtor = window.AudioContext || window.webkitAudioContext;
-    if (!AudioContextCtor) return;
-    var ctx = new AudioContextCtor();
-    if (ctx.state === "suspended") { ctx.close(); return; }
-    for (var i = 0; i < 7; i++) {
-      var t = ctx.currentTime + i * 0.085;
-      var oscillator = ctx.createOscillator(), gain = ctx.createGain();
-      oscillator.type = "triangle";
-      oscillator.frequency.setValueAtTime(130 + Math.random() * 160, t);
-      gain.gain.setValueAtTime(0.0001, t);
-      gain.gain.exponentialRampToValueAtTime(0.07, t + 0.008);
-      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.075);
-      oscillator.connect(gain); gain.connect(ctx.destination);
-      oscillator.start(t); oscillator.stop(t + 0.08);
+      if (currentClip) { currentClip.pause(); currentClip.currentTime = 0; }
+      currentClip = new Audio(SPEC.sound_url);
+      currentClip.volume = 0.90;
+      var started = currentClip.play();
+      if (started && typeof started.catch === "function") {
+        started.catch(function () {
+          markAudioBlocked();
+          // Only a failed or unavailable special effect falls back to dice sound.
+          // The user can retry the supplied parry clip by clicking the existing speaker icon.
+        });
+      }
+      return;
+    } catch (err) {
+      playDefaultDiceSound();
+      return;
     }
-    setTimeout(function(){ ctx.close(); }, 1400);
-  } catch (err) { /* Browser may block automatic audio */ }
+  }
+  // Every other action (attack, defense, skills, free rolls, Bondobo parry) keeps this sound.
+  playDefaultDiceSound();
 }
-if (soundButton) soundButton.addEventListener("click", function() {
-  rollSound(); // Explicit click is needed when browser blocks autoplay.
-});
 
+if (soundButton) {
+  soundButton.addEventListener("click", function() {
+    if (SPEC.idle) {
+      // A user click unlocks audio permission without a separate settings menu.
+      try {
+        var AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+        if (AudioContextCtor) {
+          var ctx = new AudioContextCtor();
+          Promise.resolve(ctx.resume()).then(function(){ctx.close();});
+          soundButton.title = "Áudio habilitado";
+        }
+      } catch (err) { markAudioBlocked(); }
+    } else {
+      rollSound();
+    }
+  });
+}
 
 /* ---------- utilidades de geometria (testáveis em Node) ---------- */
 function flatten(geo) {

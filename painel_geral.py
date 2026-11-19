@@ -21,6 +21,7 @@ require_role()
 
 st.markdown("""
 <style>
+@import url("https://fonts.googleapis.com/css2?family=UnifrakturCook:wght@700&display=swap");
 .stApp {background:#101116;color:#ececf1}
 header[data-testid="stHeader"] {background:transparent;height:2rem}
 .block-container {max-width:100%;padding-top:1.4rem;padding-bottom:1rem;padding-left:.75rem;padding-right:.75rem}

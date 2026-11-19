@@ -15,6 +15,9 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+from auth_unified import require_role
+require_role("jogador_1", "mestre")
+
 
 DATA_FILE = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),

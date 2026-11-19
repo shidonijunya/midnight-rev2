@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 
 import streamlit as st
 
-from shared_backend import (shared_enabled, load_character, save_character, load_app_state, save_app_state, upload_asset,
+from shared_backend import (shared_enabled, load_character, save_character, patch_character, load_app_state, save_app_state, upload_asset,
                             publish_roll, send_chat_message, get_chat_messages, clean_author,
                             config_value)
 import dice3d
@@ -61,7 +61,7 @@ div[data-testid="stButton"] button[kind="primary"] {background:#971f2d;border-co
 """, unsafe_allow_html=True)
 
 PLAYER_IDS = ["jogador_1", "jogador_2", "jogador_3"]
-PLAYER_LABELS = {"jogador_1": "Jogador 1", "jogador_2": "Jogador 2", "jogador_3": "Jogador 3"}
+PLAYER_LABELS = {"jogador_1": "Kuro", "jogador_2": "Andrias", "jogador_3": "Bondobo"}
 DICE_SIDES = [4, 6, 8, 10, 12, 20, 100]
 DEFENSES = [("Parry", "parry"), ("Rolagem", "rolagem"), ("Bloquear", "bloquear"), ("Pular", "pular"), ("Correr", "correr")]
 ATTR_ABBR = [("Força", "FOR"), ("Destreza", "DES"), ("Constituição", "CON"), ("Inteligência", "INT"),
@@ -229,7 +229,7 @@ def cb_save_resources(pid, field, widget_key):
         ss["notice"] = {"level": "error", "text": "Ficha não encontrada."}
         return
     data[field] = max(0, num(ss.get(widget_key)))
-    if save_character(pid, data):
+    if patch_character(pid, {field: data[field]}):
         ss[f"resource_snapshot_{pid}_{field}"] = data[field]
     else:
         ss["notice"] = {"level": "error", "text": "Erro ao salvar recurso."}
@@ -241,7 +241,7 @@ def cb_reset_stamina(pid):
         ss["notice"] = {"level": "error", "text": "Essa ficha ainda não tem dados salvos."}
         return
     data["estamina_atual"] = maxima(data)[2]
-    if save_character(pid, data):
+    if patch_character(pid, {"estamina_atual": data["estamina_atual"]}):
         publish_roll("text", {"text": f"{char_name(data, pid)} recuperou toda a estamina."}, "Sistema", notify=False)
         ss["notice"] = {"level": "success", "text": "Estamina restaurada."}
     else:
@@ -263,7 +263,7 @@ def cb_defense(pid, key, label):
     roll = roll_dice(1, 20)
     total = roll[0] + bonus
     data["estamina_atual"] = st_cur - cost
-    if not save_character(pid, data):
+    if not patch_character(pid, {"estamina_atual": data["estamina_atual"]}):
         set_error("Não foi possível salvar a estamina; a defesa não foi registrada.")
         return
     details = (f"{label}: 1d20 ({roll[0]}) {signed(bonus)} = **{total}**\n"
@@ -304,7 +304,7 @@ def cb_attack(pid, slot=0):
             set_error(f"Recursos insuficientes para a Weapon Art. Estamina: {st_cur}/{est}; mana: {mana_cur}/{mana}.")
             return
         data["estamina_atual"], data["mana_atual"] = st_cur - est, mana_cur - mana
-        if not save_character(pid, data):
+        if not patch_character(pid, {"estamina_atual": data["estamina_atual"], "mana_atual": data["mana_atual"]}):
             set_error("Não foi possível salvar os recursos; a ação não foi registrada.")
             return
         desc = str(data.get(wk + "wa_texto") or "").strip() or "Sem descrição cadastrada."
@@ -342,7 +342,7 @@ def cb_attack(pid, slot=0):
     crit = any(v >= critmin for v in test)
     damage = base_damage * critmult if crit else base_damage
     data["estamina_atual"] = st_cur - cost
-    if not save_character(pid, data):
+    if not patch_character(pid, {"estamina_atual": data["estamina_atual"]}):
         set_error("Não foi possível salvar a estamina; o ataque não foi registrado.")
         return
     dmg_line = f"Dano: {dmg_rolls} {signed(bd)} = **{base_damage}**"
@@ -507,7 +507,7 @@ def render_notice():
 def left_column(pid, chars):
     data = chars.get(pid) or {}
     st.markdown("#### Personagem")
-    if ss.get("_midnight_role") == "mestre":
+    if ss.get("_midnight_role") not in PLAYER_IDS:
         st.selectbox("Personagem", PLAYER_IDS, key="sel_player", label_visibility="collapsed",
                      format_func=lambda p: f"{PLAYER_LABELS[p]} — {char_name(chars.get(p), p)}")
     else:
@@ -548,7 +548,7 @@ def scene_panel():
     st.markdown("#### Cena")
     image = (st.file_uploader("Alterar cena", type=["png", "jpg", "jpeg", "webp"],
                              key="panel_scene_image", label_visibility="collapsed")
-             if ss.get("_midnight_role") == "mestre" else None)
+             if ss.get("_midnight_role") not in PLAYER_IDS else None)
     if image is not None and st.button("Publicar imagem", key="publish_scene_image"):
         if len(image.getvalue()) > 10 * 1024 * 1024:
             st.error("Imagem acima de 10 MB.")

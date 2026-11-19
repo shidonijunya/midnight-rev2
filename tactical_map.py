@@ -29,7 +29,7 @@ button.active{border-color:#c5485b;background:#4a1e29}#status{margin-left:auto;c
 <span id="status">Sincronizando…</span>
 </div>
 <div id="viewport"><canvas id="canvas" width="1200" height="800"></canvas><div id="tip"></div></div>
-<div id="help">Scroll: zoom · Clique vazio: colocar token · Shift+arrastar: mover visão · Arrastar token: mover · Ctrl+arrastar: medir · Clique direito no token: excluir · Cada quadrado: 1,5 m</div>
+<div id="help">Scroll: zoom · Clique vazio: colocar token · Shift+arrastar: mover visão (ou imagem destravada) · Arrastar token: mover · Ctrl+arrastar: medir · Clique direito no token: excluir · Cada quadrado: 1,5 m</div>
 <script>
 const OPT=__OPTIONS__, API=OPT.api, KEY=OPT.anon, catalog=OPT.catalog||{};
 const vp=document.getElementById('viewport'),c=document.getElementById('canvas'),ctx=c.getContext('2d');
@@ -95,6 +95,17 @@ async function save(){dirty=true;lastWrite=Date.now();draw();
   if(!r.ok)throw Error('HTTP '+r.status);dirty=false;status.textContent='● Sincronizado';
  }catch(e){status.textContent='⚠ Falha ao gravar';}
 }
+async function saveMapConfig(){
+ if(!remote){status.textContent='Enquadramento local';return;}
+ try{
+  const response=await fetch(API+'/rest/v1/app_state?on_conflict=key',{
+   method:'POST',headers:{...headers,Prefer:'resolution=merge-duplicates'},
+   body:JSON.stringify({key:'battle_map_config',data:config,
+                        updated_at:new Date().toISOString()})});
+  if(!response.ok)throw Error(response.status);
+  status.textContent='● Enquadramento salvo';
+ }catch(e){status.textContent='⚠ Não foi possível salvar enquadramento';}
+}
 async function poll(){
  if(!remote||reading||action||dirty&&Date.now()-lastWrite<2500)return;
  reading=true;
@@ -132,6 +143,7 @@ vp.addEventListener('pointerup',e=>{
    if(existing){existing.x=at.x;existing.y=at.y;}else tokens.push({id,x:at.x,y:at.y});}
  action=null;vp.classList.remove('drag');draw();
  if(mode==='token'||mode==='place')save();
+ if(mode==='map')saveMapConfig();
 });
 vp.addEventListener('contextmenu',e=>{e.preventDefault();const t=tokenAt(position(e));if(t){tokens=tokens.filter(x=>x!==t);save();}});
 document.getElementById('lock').onclick=()=>{

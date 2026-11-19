@@ -701,11 +701,8 @@ def render_barras():
         st.markdown('<div class="bar-container">', unsafe_allow_html=True)
         st.markdown('<div class="bar-title">❤️ Pontos de Vida</div>', unsafe_allow_html=True)
 
-        if st.session_state["hp_atual"] > hp_max:
-            st.session_state["hp_atual"] = max(hp_max, 0)
-
         st.number_input(
-            "HP atual", min_value=0, max_value=max(hp_max, 0), step=1,
+            "HP atual", min_value=0, step=1,
             key="hp_atual", label_visibility="collapsed", on_change=persist_resource, args=("hp_atual",)
         )
 
@@ -727,11 +724,8 @@ def render_barras():
         st.markdown('<div class="bar-container">', unsafe_allow_html=True)
         st.markdown('<div class="bar-title">🟢 Estamina</div>', unsafe_allow_html=True)
 
-        if st.session_state["estamina_atual"] > estamina_max:
-            st.session_state["estamina_atual"] = max(estamina_max, 0)
-
         st.number_input(
-            "Estamina atual", min_value=0, max_value=max(estamina_max, 0), step=1,
+            "Estamina atual", min_value=0, step=1,
             key="estamina_atual", label_visibility="collapsed", on_change=persist_resource, args=("estamina_atual",)
         )
 
@@ -752,11 +746,8 @@ def render_barras():
         st.markdown('<div class="bar-container">', unsafe_allow_html=True)
         st.markdown('<div class="bar-title">🔵 Mana</div>', unsafe_allow_html=True)
 
-        if st.session_state["mana_atual"] > mana_max:
-            st.session_state["mana_atual"] = max(mana_max, 0)
-
         st.number_input(
-            "Mana atual", min_value=0, max_value=max(mana_max, 0), step=1,
+            "Mana atual", min_value=0, step=1,
             key="mana_atual", label_visibility="collapsed", on_change=persist_resource, args=("mana_atual",)
         )
 

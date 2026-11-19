@@ -50,7 +50,10 @@ h4, h5 {margin:.1rem 0 .35rem 0 !important;padding:0 !important;font-size:.95rem
 .chat-card.dice {border-left-color:#5488ff;background:#152238}.chat-card.attack {border-left-color:#ef4250;background:#321821;box-shadow:inset 0 0 16px #6f1f2633}.chat-card.defense {border-left-color:#45bd83;background:#142b24}
 .boss-name{text-align:center;font-family:"UnifrakturCook","Old English Text MT",Georgia,serif;font-size:1.55rem;font-weight:800;letter-spacing:.045em;color:#efc9aa;text-shadow:none;margin:6px 0}
 .boss-image-frame{height:290px;width:100%;display:flex;justify-content:center;align-items:center;overflow:hidden;border-radius:10px;border:1px solid #34333e;background:#12141b}
-.boss-image-frame img{max-width:100%;max-height:100%;width:auto!important;height:auto!important;object-fit:contain;object-position:center}
+.boss-image-frame{position:relative;isolation:isolate}
+.boss-image-frame .boss-backdrop{position:absolute;inset:-12px;width:calc(100% + 24px);height:calc(100% + 24px);object-fit:cover;filter:blur(18px) brightness(.35);opacity:.75;z-index:-1}
+.boss-image-frame .boss-focus{display:block;max-width:100%;height:100%;width:auto;object-fit:contain;object-position:center;margin:auto}
+
 .st-key-character-sheet-block{background:#171923;border-radius:12px}
 .st-key-character-sheet-block .card{background:transparent;border:0;padding:4px}
 .st-key-character-sheet-block .stButton button{min-height:29px!important;padding:2px 5px!important;font-size:.72rem!important;border-radius:6px}
@@ -598,7 +601,7 @@ def boss_panel():
     if str(display.get("mode", "Chefe")).lower() in ("chefe", "boss") and display.get("boss_name"):
         if display.get("boss_image_url"):
             url = html.escape(str(display["boss_image_url"]), quote=True)
-            st.markdown(f'<div class="boss-image-frame"><img src="{url}" alt="Retrato do chefe"></div>',
+            st.markdown(f'<div class="boss-image-frame"><img class="boss-backdrop" src="{url}" alt=""><img class="boss-focus" src="{url}" alt="Retrato do chefe"></div>',
                         unsafe_allow_html=True)
         else:
             st.markdown('<div class="boss-image-frame"></div>', unsafe_allow_html=True)

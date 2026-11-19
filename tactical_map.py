@@ -31,14 +31,46 @@ button.active{border-color:#c5485b;background:#4a1e29}#status{margin-left:auto;c
 <div id="viewport"><canvas id="canvas" width="1200" height="800"></canvas><div id="tip"></div></div>
 <div id="help">Scroll: zoom · Clique vazio: colocar token · Shift+arrastar: mover visão (ou imagem destravada) · Arrastar token: mover · Ctrl+arrastar: medir · Clique direito no token: excluir · Cada quadrado: 1,5 m</div>
 <script>
-const OPT=__OPTIONS__, API=OPT.api, KEY=OPT.anon, catalog=OPT.catalog||{};
+const OPT=__OPTIONS__, API=OPT.api, KEY=OPT.anon;
+let catalog=OPT.catalog||{};
 const vp=document.getElementById('viewport'),c=document.getElementById('canvas'),ctx=c.getContext('2d');
 const tip=document.getElementById('tip'),tokenSelect=document.getElementById('token'),status=document.getElementById('status');
 const W=1200,H=800,CELL=50,COLS=24,ROWS=16,remote=Boolean(API&&KEY);
 const headers={'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json'};
 let config=OPT.config||{},tokens=[],scale=1,offsetX=0,offsetY=0,locked=true,measure=false,action=null;
 let lastWrite=0,dirty=false,reading=false;
-const images={};let background=null,bgUrl='';
+const images={};let background=null,bgUrl='',refreshingCatalog=false;
+async function refreshCatalog(){
+ if(!remote||refreshingCatalog)return;
+ refreshingCatalog=true;
+ try{
+  const charReq=fetch(API+'/rest/v1/characters?select=player_id,data&limit=10',
+                      {headers:{apikey:KEY,Authorization:'Bearer '+KEY}});
+  const bossReq=fetch(API+'/rest/v1/app_state?key=eq.boss_config&select=data',
+                      {headers:{apikey:KEY,Authorization:'Bearer '+KEY}});
+  const responses=await Promise.all([charReq,bossReq]);
+  if(responses[0].ok){
+    const rows=await responses[0].json();
+    for(const row of rows){
+      const pid=row.player_id;
+      if(catalog[pid]&&row.data){
+        const next=String(row.data.token_url||'');
+        if(next && next!==catalog[pid].url)catalog[pid].url=next;
+      }
+    }
+  }
+  if(responses[1].ok){
+    const rows=await responses[1].json();
+    const mob=((rows[0]||{}).data||{}).mob_tokens||{};
+    for(let i=1;i<=5;i++){
+      const id='mob_'+i;
+      if(catalog[id]&&mob[id])catalog[id].url=String(mob[id]);
+    }
+  }
+  draw();
+ }catch(e){/* Preserve cached token image on transient network failure. */}
+ finally{refreshingCatalog=false;}
+}
 function getImg(url){if(!url)return null;if(!images[url]){const im=new Image();im.crossOrigin='anonymous';im.src=url;im.onload=draw;images[url]=im;}return images[url];}
 function setBackground(){const url=config.image_url||'';if(url!==bgUrl){bgUrl=url;background=getImg(url);}}
 function loadCatalog(){tokenSelect.innerHTML='';for(const [id,entry] of Object.entries(catalog)){
@@ -71,8 +103,15 @@ function renderMap(){setBackground();ctx.fillStyle='#111827';ctx.fillRect(0,0,W,
    ctx.drawImage(img,x-img.naturalWidth*factor/2,y-img.naturalHeight*factor/2,
                  img.naturalWidth*factor,img.naturalHeight*factor);
   }else{
-   ctx.fillStyle='#333746';ctx.beginPath();ctx.arc(x,y,CELL*.4,0,Math.PI*2);ctx.fill();
-   ctx.font='24px serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(entry.emoji||'⚔️',x,y);
+   // Do not replace the user's own token with generic shield/devil artwork.
+   // Keep a subtle slot outline while the uploaded image loads.
+   ctx.strokeStyle='rgba(243,227,193,.72)';ctx.lineWidth=2;
+   ctx.beginPath();ctx.arc(x,y,CELL*.40,0,Math.PI*2);ctx.stroke();
+   if(!url){
+     ctx.fillStyle='rgba(18,20,29,.76)';
+     ctx.font='bold 11px system-ui';ctx.textAlign='center';ctx.textBaseline='middle';
+     ctx.fillText('SEM PNG',x,y);
+   }
   }
  }
  if(action&&action.mode==='measure'){
@@ -139,6 +178,10 @@ vp.addEventListener('pointermove',e=>{
 vp.addEventListener('pointerup',e=>{
  if(!action)return;const mode=action.mode,p=position(e);
  if(mode==='place'){const id=tokenSelect.value,at=cell(p);
+   if(!catalog[id]||!catalog[id].url){
+     status.textContent='⚠ Envie primeiro a imagem do token na ficha ou no app do boss';
+     action=null;vp.classList.remove('drag');draw();return;
+   }
    const existing=tokens.find(t=>t.id===id);
    if(existing){existing.x=at.x;existing.y=at.y;}else tokens.push({id,x:at.x,y:at.y});}
  action=null;vp.classList.remove('drag');draw();
@@ -155,6 +198,6 @@ document.getElementById('measure').onclick=()=>{
 };
 document.getElementById('reset').onclick=fit;
 document.getElementById('clear').onclick=()=>{if(confirm('Remover todos os tokens?')){tokens=[];save();}};
-loadCatalog();fit();poll();if(remote)setInterval(poll,1300);
+loadCatalog();fit();poll();refreshCatalog();if(remote){setInterval(poll,1300);setInterval(refreshCatalog,2500);}
 </script></body></html>"""
     return source.replace("__OPTIONS__", json.dumps(settings, ensure_ascii=False).replace("</", "<\\/"))

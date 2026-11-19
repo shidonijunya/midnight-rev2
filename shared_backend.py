@@ -123,7 +123,7 @@ def upload_asset(path, file_bytes, content_type="image/png"):
         return None
 
 
-CHAT_KINDS = ("text", "dice", "attack", "defense")
+CHAT_KINDS = ("text", "dice", "attack", "defense", "image")
 MAX_AUTHOR_LEN = 60
 MAX_TEXT_LEN = 1000
 

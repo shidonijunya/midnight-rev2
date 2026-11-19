@@ -50,7 +50,8 @@ def render_image_editor(kind, owner_id, current_url="", key="portrait"):
         return current_url
     st.image(edited, caption="Prévia")
     if st.button("Salvar imagem", key=f"{key}_save", type="primary"):
-        path = f"players/{owner_id}/{uuid4().hex}.webp" if kind == "portrait" else f"{kind}/{owner_id}/{uuid4().hex}.webp"
+        folder = {"portrait": f"players/{owner_id}", "boss": f"bosses/{owner_id}", "scene": f"scenes/{owner_id}"}[kind]
+        path = f"{folder}/{uuid4().hex}.webp"
         url = upload_asset(path, edited, "image/webp")
         if url:
             st.success("Imagem atualizada.")

@@ -66,3 +66,56 @@ Use estes arquivos como entradas separadas:
 - `ficha_jogador_3.py` usa fixamente `jogador_3`.
 
 Os três arquivos compartilham `shared_backend.py` e o mesmo projeto Supabase. Não é necessário configurar `PLAYER_ID` nos Secrets de cada ficha, porque o identificador está definido no arquivo. Configure `SUPABASE_URL` e `SUPABASE_ANON_KEY` nos Secrets de cada app, além de manter as dependências de `requirements.txt`.
+
+
+---
+
+## Revisão de 19/11/2026 — atualização dos aplicativos existentes
+
+**Não é necessário criar novos apps ou outro projeto Supabase** para testar as
+melhorias do painel e das fichas. Os arquivos de entrada atuais seguem iguais:
+
+| Aplicativo existente | Script |
+|---|---|
+| Kuro | `ficha_jogador_1.py` |
+| Andrias | `ficha_jogador_2.py` |
+| Bondobo | `ficha_jogador_3.py` |
+| Mesa e rolador | `painel_geral.py` |
+| Mestre / Boss | `app_boss.py` |
+
+Depois de o Streamlit Cloud terminar o redeploy da `main`, recarregue os
+apps existentes (F5). A base existente e as tabelas não são migradas nem
+apagadas. A autenticação por senha **não é ativada automaticamente**:
+não há forma segura de derivar as quatro senhas individuais a partir das
+credenciais de Supabase já existentes. Ela é opcional por enquanto, e precisa
+de hashes em `ACCESS_PASSWORD_HASHES` nos Secrets de cada deployment
+que se deseja proteger. O novo `app_unificado.py` continua disponível
+para uma migração futura para URL única, porém **não substitui** as URLs
+atuais sem mudar as configurações dos deployments.
+
+A implementação atual mantém a chave `SUPABASE_ANON_KEY` porque os
+aplicativos já publicados dependem dela. **Os acessos públicos do banco
+continuam públicos** até uma migração consciente de RLS. Não execute
+`supabase_private_migration.sql` ou troque para `service_role` nos apps
+existentes sem planejar a mudança das permissões.
+
+Melhorias: correção do modificador (20 = +5), salvamento de recursos
+por campos modificados com controle de concorrência, sem botão Salvar;
+cinco ataques, defesa e perícias, dados em botões e notação `2d20+7`,
+chat com anexos e GIFs convertidos para WebP animado, prévia e recorte de
+retrato e cena, boss com barra atualizada por polling e mapa 20×20 usando
+a tabela `app_state` já existente.
+
+**Limitações:** sincronização visual ocorre por consulta periódica (normalmente
+1–2 segundos), não por eventos push garantidos. O mapa compartilhado
+aproveita as políticas públicas existentes e não oferece isolamento por
+usuário antes da autenticação/migração de segurança. O som dos dados pode
+exigir clique no ícone de alto-falante quando o navegador bloqueia autoplay.
+Em alterações simultâneas do mesmo token, a última gravação ainda prevalece.
+
+### Backup e restauração
+Os arquivos anteriores estão preservados na branch
+`backup/main-before-midnight-revision-2026-11-19`.
+Para reverter sem perder o histórico, restaure os scripts dessa branch
+por um commit de reversão na `main`. Nenhuma migração de banco foi
+executada por esta revisão.

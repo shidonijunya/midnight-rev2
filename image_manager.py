@@ -7,7 +7,7 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 
 from shared_backend import upload_asset
 
-SIZES = {"portrait": (600, 750), "boss": (1200, 900), "scene": (1600, 900)}
+SIZES = {"portrait": (600, 750), "boss": (1200, 900), "scene": (1600, 900), "token": (256, 256)}
 MAX_BYTES = 10 * 1024 * 1024
 
 
@@ -20,8 +20,8 @@ def prepare_image(raw, kind, focus=(0.5, 0.5)):
         with Image.open(BytesIO(raw)) as src:
             if src.width * src.height > 40_000_000:
                 raise ValueError("Imagem muito grande.")
-            rgb = ImageOps.exif_transpose(src).convert("RGB")
-            cropped = ImageOps.fit(rgb, SIZES[kind],
+            rgb = ImageOps.exif_transpose(src).convert("RGBA" if kind == "token" else "RGB")
+            cropped = ImageOps.contain(rgb, SIZES[kind], Image.Resampling.LANCZOS) if kind == "token" else ImageOps.fit(rgb, SIZES[kind],
                                    method=Image.Resampling.LANCZOS,
                                    centering=focus)
             output = BytesIO()
@@ -50,7 +50,7 @@ def render_image_editor(kind, owner_id, current_url="", key="portrait"):
         return current_url
     st.image(edited, caption="Prévia")
     if st.button("Salvar imagem", key=f"{key}_save", type="primary"):
-        folder = {"portrait": f"players/{owner_id}", "boss": f"bosses/{owner_id}", "scene": f"scenes/{owner_id}"}[kind]
+        folder = {"portrait": f"players/{owner_id}", "token": f"players/{owner_id}", "boss": f"bosses/{owner_id}", "scene": f"scenes/{owner_id}"}[kind]
         path = f"{folder}/{uuid4().hex}.webp"
         url = upload_asset(path, edited, "image/webp")
         if url:
@@ -58,3 +58,23 @@ def render_image_editor(kind, owner_id, current_url="", key="portrait"):
             return url
         st.error("Falha ao salvar a imagem.")
     return current_url
+
+
+def upload_map_background(file):
+    """Keep entire image: cropping and stretching happen in the browser editor."""
+    if file is None:
+        return None
+    raw = file.getvalue()
+    if len(raw) > MAX_BYTES:
+        raise ValueError("O mapa deve ter no máximo 10 MB.")
+    try:
+        with Image.open(BytesIO(raw)) as image:
+            if image.width * image.height > 40_000_000:
+                raise ValueError("Mapa muito grande.")
+            rgb = ImageOps.exif_transpose(image).convert("RGB")
+            rgb.thumbnail((2600, 2600), Image.Resampling.LANCZOS)
+            out = BytesIO()
+            rgb.save(out, "WEBP", quality=88, method=5)
+    except (UnidentifiedImageError, OSError) as exc:
+        raise ValueError("Imagem de mapa inválida.") from exc
+    return upload_asset(f"scenes/maps/{uuid4().hex}.webp", out.getvalue(), "image/webp")

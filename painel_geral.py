@@ -13,6 +13,8 @@ from shared_backend import (shared_enabled, load_character, save_character, patc
                             publish_roll, send_chat_message, get_chat_messages, clean_author,
                             config_value)
 import dice3d
+from parry_kuro_asset import DATA_URI as KURO_PARRY_AUDIO
+from parry_andrias_asset import DATA_URI as ANDRIAS_PARRY_AUDIO
 
 st.set_page_config(page_title="Painel da Mesa", page_icon="🎲", layout="wide")
 from auth_unified import require_role
@@ -759,7 +761,7 @@ def chat_composer():
                 st.error(str(exc))
 
 
-@_live(1)
+@_live(2)
 def shared_animation():
     """Every connected panel fetches recent rolls for a shared dice stage."""
     messages = get_chat_messages(20)
@@ -773,10 +775,10 @@ def shared_animation():
                 [{"label": "", "sides": die["sides"], "values": die["results"]}],
                 totals=[{"label": "Total", "value": die.get("total", 0)}])
             if latest.get("message_type") == "defense" and data.get("defense_key") == "parry":
-                sounds = load_app_state("parry_sounds", {}) or {}
-                pid = data.get("player_id")
-                if pid in ("jogador_1", "jogador_2"):
-                    spec["sound_url"] = str(sounds.get(pid, "") or "")
+                sounds = {"jogador_1": KURO_PARRY_AUDIO, "jogador_2": ANDRIAS_PARRY_AUDIO}
+                special_audio = sounds.get(data.get("player_id"))
+                if special_audio:
+                    spec["sound_url"] = special_audio
                     spec["sound_kind"] = "parry"
             show_html(dice3d.stage_html(spec, height=240), 245)
             return
@@ -793,34 +795,6 @@ def shared_animation():
     show_html(dice3d.stage_html(dice3d.idle_spec(), height=240), 245)
 
 
-def parry_sound_settings():
-    """Master can upload user-supplied sound effects to the existing Supabase bucket."""
-    if ss.get("_midnight_role") in PLAYER_IDS:
-        return
-    with st.popover("🔊 Sons de Parry", help="Personalizar os efeitos de Kuro e Andrias"):
-        sounds = load_app_state("parry_sounds", {}) or {}
-        for pid, label in (("jogador_1", "Kuro — Sekiro"), ("jogador_2", "Andrias — Bloodborne")):
-            st.caption(label)
-            audio = st.file_uploader(f"Áudio de {label}", type=["mp3", "wav", "ogg"],
-                                     key=f"parry_audio_{pid}")
-            if audio and st.button(f"Publicar áudio de {label}", key=f"save_parry_audio_{pid}"):
-                if len(audio.getvalue()) > 8 * 1024 * 1024:
-                    st.error("O áudio deve ter no máximo 8 MB.")
-                else:
-                    ext = audio.name.rsplit(".", 1)[-1].lower()
-                    mime = {"mp3": "audio/mpeg", "wav": "audio/wav", "ogg": "audio/ogg"}[ext]
-                    url = upload_asset(f"parry/{pid}_{uuid.uuid4().hex}.{ext}",
-                                       audio.getvalue(), mime)
-                    if url:
-                        sounds[pid] = url
-                        if save_app_state("parry_sounds", sounds):
-                            st.success(f"Som de {label} publicado para todos os jogadores.")
-                        else:
-                            st.error("Falha ao salvar o áudio no banco.")
-            if sounds.get(pid):
-                st.audio(sounds[pid])
-
-
 def main():
     if not shared_enabled():
         st.error("O painel precisa do Supabase configurado. Adicione SUPABASE_URL e SUPABASE_ANON_KEY em Secrets.")
@@ -832,7 +806,6 @@ def main():
     ss.setdefault("chat_msg", "")
     ss.setdefault("sel_player", ss.get("_midnight_role") if ss.get("_midnight_role") in PLAYER_IDS else PLAYER_IDS[0])
 
-    parry_sound_settings()
     chars = {pid: fresh(pid) for pid in PLAYER_IDS}
     ss["_char_names"] = {pid: char_name(chars[pid], pid) for pid in PLAYER_IDS}
     pid = ss["sel_player"] if ss["sel_player"] in PLAYER_IDS else PLAYER_IDS[0]

@@ -15,6 +15,9 @@ from shared_backend import (shared_enabled, load_character, save_character, load
 import dice3d
 
 st.set_page_config(page_title="Painel da Mesa", page_icon="🎲", layout="wide")
+from auth_unified import require_role
+require_role()
+
 
 st.markdown("""
 <style>

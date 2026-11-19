@@ -92,6 +92,16 @@ var fallback = document.getElementById("fallback");
 var soundButton = document.getElementById("soundbtn");
 function rollSound() {
   if (SPEC.idle) return;
+  if (SPEC.sound_kind === "parry" && SPEC.sound_url) {
+    try {
+      var clip = new Audio(SPEC.sound_url);
+      clip.volume = 0.8;
+      clip.play().catch(function(){ 
+        if (soundButton) soundButton.title = "Clique para ouvir o Parry (reprodução automática bloqueada)";
+      });
+    } catch (err) { /* Missing or blocked media: dice animation still works. */ }
+    return;
+  }
   try {
     var AudioContextCtor = window.AudioContext || window.webkitAudioContext;
     if (!AudioContextCtor) return;

@@ -10,7 +10,7 @@ from shared_backend import load_character, save_character, patch_character, shar
 # ============================================================
 
 st.set_page_config(
-    page_title="Ficha do Jogador 3 — Sol da Meia-Noite (Midnight Sun)",
+    page_title="Bondobo — Midnight Sun",
     page_icon="🌒",
     layout="wide",
     initial_sidebar_state="expanded",

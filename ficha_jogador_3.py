@@ -818,7 +818,6 @@ def render_destaques():
                 '<div class="warning-box">⚠️ SOBREPESO</div>',
                 unsafe_allow_html=True
             )
-        st.caption("Peso somado das 4 peças de armadura cadastradas abaixo.")
         st.markdown('</div>', unsafe_allow_html=True)
 
 
@@ -863,12 +862,6 @@ def render_pericias():
                 sinal_b = "+" if bonus >= 0 else ""
                 st.write(f"**{sinal_b}{bonus}**")
 
-        st.caption(
-            "Bônus treinado reconstruído a partir da tabela fornecida "
-            "(mod + metade do mod arred. p/ baixo + 1). Ajuste o código se a "
-            "progressão pretendida for outra."
-        )
-
 
     # ============================================================
     # RENDER: DEFESAS
@@ -876,7 +869,6 @@ def render_pericias():
 
 def render_defesas():
     with st.expander("Defesas e movimentação", expanded=False):
-        st.caption("Informe apenas o bônus numérico (ex.: 5 para +5) e o custo de estamina de cada ação.")
         for nome, chave in DEFESAS.items():
             c1, c2, c3 = st.columns([2, 1, 1])
             with c1:

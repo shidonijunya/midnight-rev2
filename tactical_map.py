@@ -37,6 +37,12 @@ const vp=document.getElementById('viewport'),c=document.getElementById('canvas')
 ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality="high";
 const tip=document.getElementById('tip'),tokenSelect=document.getElementById('token'),status=document.getElementById('status');
 const W=1200,H=800,CELL=50,COLS=24,ROWS=16,remote=Boolean(API&&KEY);
+// Keep world coordinates at 1200×800, but rasterize at the screen's real pixel density.
+const DPR=Math.min(3,Math.max(1,window.devicePixelRatio||1));
+c.width=Math.round(W*DPR);c.height=Math.round(H*DPR);
+c.style.width=W+'px';c.style.height=H+'px';
+ctx.setTransform(DPR,0,0,DPR,0,0);
+ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';
 const headers={'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json'};
 let config=OPT.config||{},tokens=[],scale=1,offsetX=0,offsetY=0,locked=true,measure=false,action=null;
 let lastWrite=0,dirty=false,reading=false;
@@ -82,7 +88,7 @@ function position(e){const r=vp.getBoundingClientRect();return {x:e.clientX-r.le
 function world(p){return {x:(p.x-offsetX)/scale,y:(p.y-offsetY)/scale};}
 function cell(p){const w=world(p);return {x:Math.max(0,Math.min(COLS-1,Math.floor(w.x/CELL))),y:Math.max(0,Math.min(ROWS-1,Math.floor(w.y/CELL)))};}
 function tokenAt(p){const w=world(p);return [...tokens].reverse().find(t=>Math.hypot((t.x+.5)*CELL-w.x,(t.y+.5)*CELL-w.y)<CELL*.48);}
-function renderMap(){setBackground();ctx.fillStyle='#111827';ctx.fillRect(0,0,W,H);
+function renderMap(){setBackground();ctx.setTransform(DPR,0,0,DPR,0,0);ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';ctx.fillStyle='#111827';ctx.fillRect(0,0,W,H);
  if(background&&background.complete&&background.naturalWidth){
   const mode=config.fit||'cover',iw=background.naturalWidth,ih=background.naturalHeight;
   const zoom=Math.max(.25,Math.min(4,Number(config.image_zoom)||1));
@@ -100,7 +106,9 @@ function renderMap(){setBackground();ctx.fillStyle='#111827';ctx.fillRect(0,0,W,
   const x=(t.x+.5)*CELL,y=(t.y+.5)*CELL,entry=catalog[t.id]||{},url=entry.url;
   const img=getImg(url);
   if(img&&img.complete&&img.naturalWidth){
-   const factor=Math.min(CELL*.97/img.naturalWidth,CELL*.97/img.naturalHeight);
+   // A slightly larger visual footprint keeps portrait details legible at fit-to-map zoom.
+   // Logical placement and movement still snap to a single 1.5m cell.
+   const factor=Math.min(CELL*1.18/img.naturalWidth,CELL*1.18/img.naturalHeight);
    ctx.drawImage(img,x-img.naturalWidth*factor/2,y-img.naturalHeight*factor/2,
                  img.naturalWidth*factor,img.naturalHeight*factor);
   }else{

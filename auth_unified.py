@@ -42,7 +42,18 @@ def resolve_role(password):
     return matches[0] if len(matches) == 1 else None
 
 
+def credentials_ready():
+    try:
+        hashes = st.secrets.get("ACCESS_PASSWORD_HASHES", {})
+        return all(bool(hashes.get(role)) for role in ROLES)
+    except Exception:
+        return False
+
+
 def login_gate():
+    if not credentials_ready():
+        st.error("Configure ACCESS_PASSWORD_HASHES nos Secrets para ativar o acesso unificado por senha.")
+        st.stop()
     role = st.session_state.get("_midnight_role")
     if role in ROLES:
         return role
@@ -61,6 +72,11 @@ def login_gate():
 
 
 def require_role(*allowed):
+    # Backward compatibility: the five previously deployed app URLs continue to
+    # run on their existing Supabase config. Password gate becomes mandatory
+    # as soon as all four credential hashes are installed in that deployment.
+    if not credentials_ready():
+        return None
     role = st.session_state.get("_midnight_role")
     if role not in ROLES:
         login_gate()

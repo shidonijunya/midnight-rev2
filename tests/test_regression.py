@@ -67,6 +67,23 @@ class TestCoreRules(unittest.TestCase):
         with Image.open(io.BytesIO(processed)) as rendered:
             self.assertEqual(rendered.size, (600, 750))
 
+    def test_token_transparency_and_native_resolution(self):
+        from image_manager import prepare_image
+        original = Image.new("RGBA", (600, 540), (0, 0, 0, 0))
+        original.putpixel((40, 40), (255, 0, 0, 255))
+        stream = io.BytesIO()
+        original.save(stream, format="PNG")
+        output = prepare_image(stream.getvalue(), "token")
+        with Image.open(io.BytesIO(output)) as token:
+            self.assertEqual(token.size, (600, 540))
+            self.assertEqual(token.convert("RGBA").getpixel((0, 0))[3], 0)
+            self.assertEqual(token.convert("RGBA").getpixel((40, 40)), (255, 0, 0, 255))
+
+    def test_bottom_ratio_and_simple_dice_labels(self):
+        source = (ROOT / "painel_geral.py").read_text(encoding="utf-8")
+        self.assertIn("st.columns([4.15, 6.15]", source)
+        self.assertIn('col.button(f"d{sides}"', source)
+
     def test_gif_keeps_animation(self):
         from chat_media import _animated_webp
         frames = [Image.new("RGBA", (40, 40), color)

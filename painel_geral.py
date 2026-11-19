@@ -507,8 +507,11 @@ def render_notice():
 def left_column(pid, chars):
     data = chars.get(pid) or {}
     st.markdown("#### Personagem")
-    st.selectbox("Personagem", PLAYER_IDS, key="sel_player", label_visibility="collapsed",
-                 format_func=lambda p: f"{PLAYER_LABELS[p]} — {char_name(chars.get(p), p)}")
+    if ss.get("_midnight_role") == "mestre":
+        st.selectbox("Personagem", PLAYER_IDS, key="sel_player", label_visibility="collapsed",
+                     format_func=lambda p: f"{PLAYER_LABELS[p]} — {char_name(chars.get(p), p)}")
+    else:
+        ss["sel_player"] = ss["_midnight_role"]
     render_notice()
     live_character(pid)
     if not data:
@@ -543,8 +546,9 @@ def left_column(pid, chars):
 def scene_panel():
     display = load_app_state("table_display", {}) or {}
     st.markdown("#### Cena")
-    image = st.file_uploader("Alterar cena", type=["png", "jpg", "jpeg", "webp"],
+    image = (st.file_uploader("Alterar cena", type=["png", "jpg", "jpeg", "webp"],
                              key="panel_scene_image", label_visibility="collapsed")
+             if ss.get("_midnight_role") == "mestre" else None)
     if image is not None and st.button("Publicar imagem", key="publish_scene_image"):
         if len(image.getvalue()) > 10 * 1024 * 1024:
             st.error("Imagem acima de 10 MB.")
@@ -680,6 +684,9 @@ def right_column(pid, chars):
         if st.button("Rolar expressão", key="run_custom", type="primary"):
             cb_roll(expression=expression)
     shared_animation()
+
+
+def chat_composer():
     st.markdown("#### Enviar mensagem")
     try:
         sent = st.chat_input("Mensagem, imagem ou GIF (Enter para enviar)",
@@ -741,7 +748,7 @@ def main():
     ss.setdefault("dice_bonus", 0)
     ss.setdefault("display_name", "")
     ss.setdefault("chat_msg", "")
-    ss.setdefault("sel_player", PLAYER_IDS[0])
+    ss.setdefault("sel_player", ss.get("_midnight_role") if ss.get("_midnight_role") in PLAYER_IDS else PLAYER_IDS[0])
 
     chars = {pid: fresh(pid) for pid in PLAYER_IDS}
     ss["_char_names"] = {pid: char_name(chars[pid], pid) for pid in PLAYER_IDS}
@@ -759,6 +766,7 @@ def main():
     with chat_col:
         st.markdown("#### Chat da mesa")
         chat_history()
+        chat_composer()
         boss_panel()
     with scene_col:
         scene_panel()

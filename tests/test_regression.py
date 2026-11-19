@@ -84,10 +84,24 @@ class TestCoreRules(unittest.TestCase):
         stage = (ROOT / "dice3d.py").read_text(encoding="utf-8")
         self.assertIn('"player_id": pid, "defense_key": key', panel)
         self.assertIn('data.get("defense_key") == "parry"', panel)
-        self.assertIn('("jogador_1", "Kuro — Sekiro")', panel)
-        self.assertIn('("jogador_2", "Andrias — Bloodborne")', panel)
+        self.assertIn('"jogador_1": KURO_PARRY_AUDIO', panel)
+        self.assertIn('"jogador_2": ANDRIAS_PARRY_AUDIO', panel)
+        self.assertNotIn("def parry_sound_settings()", panel)
         self.assertIn('SPEC.sound_kind === "parry"', stage)
         self.assertIn('new Audio(SPEC.sound_url)', stage)
+        self.assertIn('playDefaultDiceSound()', stage)
+        self.assertIn('ctx.resume().then(scheduleRattle)', stage)
+
+    def test_bundled_audio_is_decodable_without_upload(self):
+        import base64
+        from parry_kuro_asset import DATA_URI as kuro
+        from parry_andrias_asset import DATA_URI as andrias
+        for uri, expected in ((kuro, 2499), (andrias, 3988)):
+            self.assertTrue(uri.startswith("data:audio/mpeg;base64,"))
+            payload = base64.b64decode(uri.split(",", 1)[1], validate=True)
+            self.assertEqual(len(payload), expected)
+            self.assertTrue(payload.startswith(b"ID3"))
+
 
     def test_bottom_ratio_and_simple_dice_labels(self):
         source = (ROOT / "painel_geral.py").read_text(encoding="utf-8")

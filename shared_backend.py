@@ -44,7 +44,7 @@ def get_client():
 
 
 def shared_enabled():
-    return bool(config_value("SUPABASE_URL") and config_value("SUPABASE_ANON_KEY"))
+    return bool(config_value("SUPABASE_URL") and (config_value("SUPABASE_ANON_KEY") or config_value("SUPABASE_SERVICE_ROLE_KEY")))
 
 
 def get_player_id(default="jogador_1"):

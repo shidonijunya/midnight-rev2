@@ -610,18 +610,12 @@ def render_header():
             "Fragmentos de Essência", min_value=0, step=1, key="fragmentos_essencia"
         )
 
-    retrato = st.file_uploader("Retrato do personagem (PNG/JPG)", type=["png", "jpg", "jpeg"], key="retrato_upload")
-    if retrato is not None and st.session_state.get("_retrato_nome_enviado") != retrato.name:
-        mime = retrato.type or ("image/png" if retrato.name.lower().endswith(".png") else "image/jpeg")
-        url = upload_asset(f"players/{PLAYER_ID}/portrait_{retrato.name.replace(' ', '_')}", retrato.getvalue(), mime) if shared_enabled() else None
-        if url:
-            st.session_state["imagem_url"] = url
-            st.session_state["_retrato_nome_enviado"] = retrato.name
-            st.success("Retrato sincronizado com o painel.")
-        elif not shared_enabled():
-            st.warning("Configure o Supabase para compartilhar o retrato com o painel.")
-    if st.session_state.get("imagem_url"):
-        st.image(st.session_state["imagem_url"], width=100)
+    from image_manager import render_image_editor
+    new_image_url = render_image_editor("portrait", PLAYER_ID,
+                  st.session_state.get("imagem_url", ""), key=f"portrait_{PLAYER_ID}")
+    if new_image_url != st.session_state.get("imagem_url"):
+        st.session_state["imagem_url"] = new_image_url
+
 
 
 

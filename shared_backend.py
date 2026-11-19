@@ -52,6 +52,8 @@ def get_player_id(default="jogador_1"):
 
 
 def load_character(player_id):
+    if auth_configured() and st.session_state.get("_midnight_role") not in (player_id, "mestre"):
+        return None
     client = get_client()
     if client is None:
         return None
@@ -128,6 +130,9 @@ def patch_character(player_id, changes, attempts=5):
 
 
 def load_app_state(key, default=None):
+    if auth_configured() and st.session_state.get("_midnight_role") != "mestre":
+        if key not in ("table_display", "battle_grid"):
+            return default
     client = get_client()
     if client is None:
         return default
@@ -202,6 +207,10 @@ def _insert_chat(message_type, data, author):
     if client is None:
         return False, "Supabase não configurado (SUPABASE_URL e chave anon ou service_role)."
     try:
+        if auth_configured():
+            role = st.session_state.get("_midnight_role")
+            author = {"jogador_1":"Kuro","jogador_2":"Andrias",
+                      "jogador_3":"Bondobo","mestre":"Mestre"}.get(role, "Mesa")
         client.table("chat_messages").insert({
             "message_type": message_type,
             "author": author,

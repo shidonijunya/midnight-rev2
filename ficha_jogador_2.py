@@ -3,7 +3,7 @@ import math
 import os
 
 import streamlit as st
-from shared_backend import load_character, save_character, shared_enabled, upload_asset
+from shared_backend import load_character, save_character, patch_character, shared_enabled, upload_asset
 
 # ============================================================
 # CONFIGURAÇÃO DA PÁGINA
@@ -258,6 +258,7 @@ DICE_SIDES_OPTIONS = [4, 6, 8, 10, 12, 20, 100]
 
 DEFESAS = {"Parry": "parry", "Rolagem": "rolagem", "Bloquear": "bloquear", "Pular": "pular", "Correr": "correr"}
 PLAYER_ID = "jogador_2"
+PLAYER_NAME = "Andrias"
 
 # Tabela de Fragmentos de Essência necessários para cada nível (1 a 99)
 XP_TABLE = {
@@ -392,7 +393,7 @@ def build_default_state() -> dict:
     """Constrói o dicionário completo de valores padrão da ficha."""
 
     state = {
-        "nome_personagem": "",
+        "nome_personagem": PLAYER_NAME,
         "nivel": 1,
         "fragmentos_essencia": 0,
         "pontos_atributo": 0,
@@ -551,6 +552,8 @@ def init_session_state():
         )
 
     st.session_state["ficha_inicializada"] = True
+    if shared_enabled() and not loaded:
+        save_character(PLAYER_ID, collect_state())
     st.session_state["_last_synced_snapshot"] = collect_state()
 
 
@@ -674,12 +677,11 @@ def sincronizar_recursos_compartilhados():
 def persist_resource(field):
     if not shared_enabled():
         return
-    remote = load_character(PLAYER_ID)
-    if remote:
-        remote[field] = st.session_state.get(field)
-        if save_character(PLAYER_ID, remote):
-            st.session_state["_last_synced_snapshot"] = dict(remote)
-
+    value = st.session_state.get(field)
+    if patch_character(PLAYER_ID, {field: value}):
+        snapshot = dict(st.session_state.get("_last_synced_snapshot", {}))
+        snapshot[field] = value
+        st.session_state["_last_synced_snapshot"] = snapshot
 
 
 @st.fragment(run_every="5s")
@@ -1156,26 +1158,25 @@ def render_planejador_turno():
 
 
 
-def sync_shared_state():
-    """Synchronize only fields changed in this browser, preserving remote resources."""
+def sync_shared_state(pull=True):
+    """Only patch changed fields; never send an old copy of all resources."""
     if not shared_enabled() or not st.session_state.get("ficha_inicializada"):
         return
     current = collect_state()
     snapshot = st.session_state.get("_last_synced_snapshot", {})
-    changed = {k: v for k, v in current.items() if snapshot.get(k) != v
-               and k not in ("hp_atual", "mana_atual", "estamina_atual")}
+    resources = {"hp_atual", "mana_atual", "estamina_atual"}
+    changed = {key: value for key, value in current.items()
+               if key not in resources and snapshot.get(key) != value}
     if changed:
-        remote = load_character(PLAYER_ID) or {}
-        remote.update(changed)
-        if save_character(PLAYER_ID, remote):
-            st.session_state["_last_synced_snapshot"] = collect_state()
-    else:
+        if patch_character(PLAYER_ID, changed):
+            latest = dict(snapshot)
+            latest.update(changed)
+            st.session_state["_last_synced_snapshot"] = latest
+        return
+    if pull:
         remote = load_character(PLAYER_ID)
         if remote:
-            # Refresh only when no pending browser edits.
-            for k in ("hp_atual", "mana_atual", "estamina_atual"):
-                if remote.get(k) is not None:
-                    st.session_state[k] = remote[k]
+            apply_loaded_data(remote)
             st.session_state["_last_synced_snapshot"] = collect_state()
 
 
@@ -1198,8 +1199,8 @@ def main():
     render_armadura()
     render_inventario()
 
-    # Persist only changed fields, never stale full-state snapshots.
-    sync_shared_state()
+    # Persist user edits after widgets, without changing their widget state.
+    sync_shared_state(pull=False)
 
 
 if __name__ == "__main__":

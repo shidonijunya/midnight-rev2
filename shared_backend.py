@@ -17,7 +17,7 @@ def config_value(key, default=None):
 def _safe_error(exc):
     """Texto de erro sem vazar URL/chave configuradas."""
     text = str(exc)
-    for secret in (config_value("SUPABASE_ANON_KEY"), config_value("SUPABASE_URL")):
+    for secret in (config_value("SUPABASE_SERVICE_ROLE_KEY"), config_value("SUPABASE_URL")):
         if secret:
             text = text.replace(str(secret), "***")
     return text[:300]
@@ -31,7 +31,7 @@ def _cached_client(url, key):
 
 def get_client():
     url = config_value("SUPABASE_URL")
-    key = config_value("SUPABASE_ANON_KEY")
+    key = config_value("SUPABASE_SERVICE_ROLE_KEY")
     if not url or not key:
         return None
     try:
@@ -63,6 +63,8 @@ def load_character(player_id):
 
 
 def save_character(player_id, data):
+    if st.session_state.get("_midnight_role") not in (player_id, "mestre"):
+        return False
     client = get_client()
     if client is None:
         return False
@@ -92,6 +94,8 @@ def load_app_state(key, default=None):
 
 
 def save_app_state(key, data):
+    if st.session_state.get("_midnight_role") != "mestre":
+        return False
     client = get_client()
     if client is None:
         return False
@@ -108,7 +112,18 @@ def save_app_state(key, data):
 
 
 def upload_asset(path, file_bytes, content_type="image/png"):
-    """Envia arquivo ao bucket público rpg-assets e retorna a URL pública."""
+    """Server-side assets uploader, enforcing role-specific paths."""
+    role = st.session_state.get("_midnight_role")
+    if role not in ("jogador_1", "jogador_2", "jogador_3", "mestre"):
+        return None
+    if not isinstance(path, str) or ".." in path or path.startswith("/"):
+        return None
+    if path.startswith(("scenes/", "bosses/")) and role != "mestre":
+        return None
+    if path.startswith("players/") and role != "mestre" and not path.startswith(f"players/{role}/"):
+        return None
+    if not path.startswith(("scenes/", "bosses/", "players/", "chat/")):
+        return None
     client = get_client()
     if client is None:
         return None
@@ -138,7 +153,7 @@ def _insert_chat(message_type, data, author):
     """Insere no chat. Retorna (ok, erro_legivel_ou_None). Nunca levanta exceção."""
     client = get_client()
     if client is None:
-        return False, "Supabase não configurado (SUPABASE_URL / SUPABASE_ANON_KEY)."
+        return False, "Supabase não configurado (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY)."
     try:
         client.table("chat_messages").insert({
             "message_type": message_type,
@@ -197,6 +212,8 @@ def get_chat_messages(limit=100):
 
 
 def clear_chat_messages():
+    if st.session_state.get("_midnight_role") != "mestre":
+        return False
     client = get_client()
     if client is None:
         return False

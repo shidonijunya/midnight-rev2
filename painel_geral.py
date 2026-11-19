@@ -48,8 +48,15 @@ h4, h5 {margin:.1rem 0 .35rem 0 !important;padding:0 !important;font-size:.95rem
 .mini .bars i {display:block;height:100%}
 .chat-card {background:#1a1d27;border:1px solid #363948;border-left:3px solid #9c7bff;border-radius:8px;padding:6px 9px;margin:0 0 6px 0;font-size:.86rem}
 .chat-card.dice {border-left-color:#5488ff;background:#152238}.chat-card.attack {border-left-color:#ef4250;background:#321821;box-shadow:inset 0 0 16px #6f1f2633}.chat-card.defense {border-left-color:#45bd83;background:#142b24}
-.boss-name{text-align:center;font-family:"UnifrakturCook","Old English Text MT",Georgia,serif;font-size:1.55rem;font-weight:800;letter-spacing:.045em;color:#efc9aa;text-shadow:0 2px 10px #a4453f;margin:6px 0}
-.boss-image-frame{height:300px;width:100%;display:flex;justify-content:center;align-items:center;overflow:hidden;border-radius:10px;border:1px solid #34333e;background:#12141b}
+.boss-name{text-align:center;font-family:"UnifrakturCook","Old English Text MT",Georgia,serif;font-size:1.55rem;font-weight:800;letter-spacing:.045em;color:#efc9aa;text-shadow:none;margin:6px 0}
+.boss-image-frame{height:290px;width:100%;display:flex;justify-content:center;align-items:center;overflow:hidden;border-radius:10px;border:1px solid #34333e;background:#12141b}
+.boss-image-frame img{max-width:100%;max-height:100%;width:auto!important;height:auto!important;object-fit:contain;object-position:center}
+.st-key-character-sheet-block{background:#171923;border-radius:12px}
+.st-key-character-sheet-block .card{background:transparent;border:0;padding:4px}
+.st-key-character-sheet-block .stButton button{min-height:29px!important;padding:2px 5px!important;font-size:.72rem!important;border-radius:6px}
+.st-key-character-sheet-block [data-testid="stVerticalBlock"]{gap:.15rem}
+.st-key-character-sheet-block h5{font-size:.70rem!important;letter-spacing:.025em}
+
 .boss-image-frame img{width:100%;height:100%;object-fit:contain;object-position:center}
 .scene-image-frame{height:285px;width:100%;display:flex;align-items:center;justify-content:center;overflow:hidden;border:1px solid #343744;border-radius:10px;background:#10141c}
 .scene-image-frame img{width:100%;height:100%;object-fit:contain}
@@ -534,7 +541,14 @@ def left_column(pid, chars):
     else:
         ss["sel_player"] = ss["_midnight_role"]
     render_notice()
-    live_character(pid)
+    with st.container(border=True, key="character-sheet-block"):
+        stat_col, defense_col, skills_col = st.columns([3.7, 1.45, 1.8], gap="small")
+        with stat_col:
+            live_character(pid)
+        with defense_col:
+            render_defense_buttons(pid)
+        with skills_col:
+            render_skill_buttons(pid)
     if not data:
         return
     resource_editor(pid)
@@ -581,7 +595,6 @@ def scene_panel():
 @_live(2)
 def boss_panel():
     display = load_app_state("table_display", {}) or {}
-    st.markdown("#### Chefe")
     if str(display.get("mode", "Chefe")).lower() in ("chefe", "boss") and display.get("boss_name"):
         if display.get("boss_image_url"):
             url = html.escape(str(display["boss_image_url"]), quote=True)
@@ -626,23 +639,30 @@ def cb_skill(pid, skill):
                totals=[{"label": "Total", "value": total}], lines=[details], published=ok)
 
 
-def render_defenses_and_skills(pid, data):
-    dcol, scol = st.columns(2)
-    with dcol:
-        st.markdown("##### Defesas")
-        for label, key in DEFENSES:
-            st.button(label, key=f"def_{pid}_{key}", **STRETCH,
-                      on_click=cb_defense, args=(pid, key, label))
-    with scol:
-        st.markdown("##### Perícias")
-        for skill in SKILL_ATTRIBUTES:
-            st.button(skill, key=f"skill_{pid}_{skill}", **STRETCH,
-                      on_click=cb_skill, args=(pid, skill))
+def render_defense_buttons(pid):
+    st.markdown("##### Defesas")
+    for label, key in DEFENSES:
+        st.button(label, key=f"def_{pid}_{key}", **STRETCH,
+                  on_click=cb_defense, args=(pid, key, label))
 
+
+def render_skill_buttons(pid):
+    st.markdown("##### Perícias")
+    for skill in SKILL_ATTRIBUTES:
+        st.button(skill, key=f"skill_{pid}_{skill}", **STRETCH,
+                  on_click=cb_skill, args=(pid, skill))
+
+
+def render_defenses_and_skills(pid, data):
+    """Legacy convenience wrapper for tests and older layouts."""
+    dcol, scol = st.columns(2, gap="small")
+    with dcol:
+        render_defense_buttons(pid)
+    with scol:
+        render_skill_buttons(pid)
 
 
 def render_grid(chars):
-    st.markdown("#### Mapa tático")
     config = load_app_state("battle_map_config", {}) or {}
     is_master = ss.get("_midnight_role") not in PLAYER_IDS
     if is_master:
@@ -779,12 +799,10 @@ def main():
     ss["_char_names"] = {pid: char_name(chars[pid], pid) for pid in PLAYER_IDS}
     pid = ss["sel_player"] if ss["sel_player"] in PLAYER_IDS else PLAYER_IDS[0]
 
-    character_col, defenses_col, communication_col, scene_col = st.columns(
-        [3.3, 1.35, 2.6, 2.25], gap="small")
+    character_col, communication_col, scene_col = st.columns(
+        [5.0, 3.2, 3.1], gap="small")
     with character_col:
         left_column(pid, chars)
-    with defenses_col:
-        render_defenses_and_skills(pid, chars.get(pid) or {})
     with communication_col:
         right_column(pid, chars)
         st.markdown("#### Chat da mesa")
@@ -794,7 +812,7 @@ def main():
         shared_animation()
         scene_panel()
 
-    boss_col, map_col = st.columns([3.3, 6.2], gap="small")
+    boss_col, map_col = st.columns([3.05, 7.25], gap="small")
     with boss_col:
         boss_panel()
     with map_col:

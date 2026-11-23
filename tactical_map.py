@@ -22,14 +22,14 @@ button.active{border-color:#c5485b;background:#4a1e29}#status{margin-left:auto;c
 </style></head><body>
 <div id="toolbar">
 <select id="token"></select>
-<button id="lock" class="active" title="Bloquear edição do mapa; os tokens continuam móveis">🔒 Mapa travado</button>
+<button id="add">Adicionar token</button><select id="size" aria-label="Tamanho do token"><option value="1">1×1</option><option value="2">2×2</option><option value="3">3×3</option><option value="4">4×4</option></select>
 <button id="measure" title="Medir distância">📏 Medir</button>
 <button id="reset">⤢ Ajustar</button>
 <button id="clear" title="Remover todos os tokens">Limpar tokens</button>
 <span id="status">Sincronizando…</span>
 </div>
-<div id="viewport"><canvas id="canvas" width="1200" height="800"></canvas><div id="tip"></div></div>
-<div id="help">Scroll: zoom · Clique vazio: colocar token · Shift+arrastar: mover visão (ou imagem destravada) · Arrastar token: mover · Ctrl+arrastar: medir · Clique direito no token: excluir · Cada quadrado: 1,5 m</div>
+<div id="viewport" tabindex="0"><canvas id="canvas" width="1200" height="800"></canvas><div id="tip"></div></div>
+<div id="help">Arraste o mapa ou o token · Setas: mover seleção · Shift+arrastar token: mover e medir · Ctrl+arrastar: medir · Scroll: zoom · Clique direito: remover</div>
 <script>
 const OPT=__OPTIONS__, API=OPT.api, KEY=OPT.anon;
 let catalog=OPT.catalog||{};
@@ -87,7 +87,12 @@ function fit(){scale=Math.min(vp.clientWidth/W,vp.clientHeight/H);offsetX=(vp.cl
 function position(e){const r=vp.getBoundingClientRect();return {x:e.clientX-r.left,y:e.clientY-r.top};}
 function world(p){return {x:(p.x-offsetX)/scale,y:(p.y-offsetY)/scale};}
 function cell(p){const w=world(p);return {x:Math.max(0,Math.min(COLS-1,Math.floor(w.x/CELL))),y:Math.max(0,Math.min(ROWS-1,Math.floor(w.y/CELL)))};}
-function tokenAt(p){const w=world(p);return [...tokens].reverse().find(t=>Math.hypot((t.x+.5)*CELL-w.x,(t.y+.5)*CELL-w.y)<CELL*.48);}
+let selected=null;
+const sizeControl=document.getElementById('size');
+function side(t){return Math.max(1,Math.min(4,Number(t.size)||1));}
+function move(t,x,y){t.x=Math.max(0,Math.min(COLS-side(t),x));t.y=Math.max(0,Math.min(ROWS-side(t),y));}
+function select(t){selected=t.id;tokenSelect.value=t.id;sizeControl.value=side(t);}
+function tokenAt(p){const w=world(p);return [...tokens].reverse().find(t=>w.x>=t.x*CELL&&w.x<(t.x+side(t))*CELL&&w.y>=t.y*CELL&&w.y<(t.y+side(t))*CELL);}
 function renderMap(){setBackground();ctx.setTransform(DPR,0,0,DPR,0,0);ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';ctx.fillStyle='#111827';ctx.fillRect(0,0,W,H);
  if(background&&background.complete&&background.naturalWidth){
   const mode=config.fit||'cover',iw=background.naturalWidth,ih=background.naturalHeight;
@@ -103,12 +108,12 @@ function renderMap(){setBackground();ctx.setTransform(DPR,0,0,DPR,0,0);ctx.image
  for(let i=0;i<=COLS;i++){ctx.beginPath();ctx.moveTo(i*CELL+.5,0);ctx.lineTo(i*CELL+.5,H);ctx.stroke();}
  for(let i=0;i<=ROWS;i++){ctx.beginPath();ctx.moveTo(0,i*CELL+.5);ctx.lineTo(W,i*CELL+.5);ctx.stroke();}
  for(const t of tokens){
-  const x=(t.x+.5)*CELL,y=(t.y+.5)*CELL,entry=catalog[t.id]||{},url=entry.url;
+  const span=side(t)*CELL,x=t.x*CELL+span/2,y=t.y*CELL+span/2,entry=catalog[t.id]||{},url=entry.url;
   const img=getImg(url);
   if(img&&img.complete&&img.naturalWidth){
    // A slightly larger visual footprint keeps portrait details legible at fit-to-map zoom.
    // Logical placement and movement still snap to a single 1.5m cell.
-   const factor=Math.min(CELL*1.18/img.naturalWidth,CELL*1.18/img.naturalHeight);
+   const factor=Math.min(span/img.naturalWidth,span/img.naturalHeight);
    ctx.drawImage(img,x-img.naturalWidth*factor/2,y-img.naturalHeight*factor/2,
                  img.naturalWidth*factor,img.naturalHeight*factor);
   }else{
@@ -122,8 +127,9 @@ function renderMap(){setBackground();ctx.setTransform(DPR,0,0,DPR,0,0);ctx.image
      ctx.fillText('SEM PNG',x,y);
    }
   }
+  if(selected===t.id){ctx.strokeStyle='#88d8ff';ctx.lineWidth=3/scale;ctx.strokeRect(t.x*CELL,t.y*CELL,span,span);}
  }
- if(action&&action.mode==='measure'){
+ if(action&&(action.mode==='measure'||action.measuring)){
   const a=action.start,b=action.end||a;
   ctx.strokeStyle='#f7d16e';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();
   const dx=(b.x-a.x)/CELL,dy=(b.y-a.y)/CELL,meters=Math.hypot(dx,dy)*1.5;
@@ -168,40 +174,38 @@ async function poll(){
 vp.addEventListener('wheel',e=>{e.preventDefault();const p=position(e),w=world(p),factor=e.deltaY<0?1.13:1/1.13;
  scale=Math.max(.2,Math.min(5,scale*factor));offsetX=p.x-w.x*scale;offsetY=p.y-w.y*scale;draw();},{passive:false});
 vp.addEventListener('pointerdown',e=>{
- const p=position(e),w=world(p),target=tokenAt(p);
+ if(e.button!==0)return;
+ vp.focus();const p=position(e),w=world(p),target=tokenAt(p);
  if(e.ctrlKey||measure){action={mode:'measure',start:w,end:w};}
- else if(target){action={mode:'token',id:target.id};}
- else if(!locked&&e.shiftKey){action={mode:'map',p,panX:Number(config.pan_x)||0,panY:Number(config.pan_y)||0};}
- else if(e.shiftKey||e.button===1){action={mode:'pan',p,ox:offsetX,oy:offsetY};}
- else{action={mode:'place',p};}
+ else if(target){select(target);const at=cell(p);action={mode:'token',id:target.id,dx:target.x-at.x,dy:target.y-at.y,measuring:e.shiftKey,start:w,end:w};}
+ else{action={mode:'pan',p,ox:offsetX,oy:offsetY};}
  vp.setPointerCapture(e.pointerId);vp.classList.add('drag');draw();
 });
 vp.addEventListener('pointermove',e=>{
  if(!action)return;const p=position(e),w=world(p);
  if(action.mode==='measure')action.end=w;
  if(action.mode==='pan'){offsetX=action.ox+p.x-action.p.x;offsetY=action.oy+p.y-action.p.y;}
- if(action.mode==='token'){const t=tokens.find(t=>t.id===action.id);if(t){const at=cell(p);t.x=at.x;t.y=at.y;}}
+ if(action.mode==='token'){const t=tokens.find(t=>t.id===action.id);if(t){const at=cell(p);move(t,at.x+action.dx,at.y+action.dy);action.end=w;}}
  if(action.mode==='map'){config.pan_x=Math.max(-1,Math.min(1,action.panX+(p.x-action.p.x)/(W*scale)*2));config.pan_y=Math.max(-1,Math.min(1,action.panY+(p.y-action.p.y)/(H*scale)*2));}
  draw();
 });
 vp.addEventListener('pointerup',e=>{
  if(!action)return;const mode=action.mode,p=position(e);
- if(mode==='place'){const id=tokenSelect.value,at=cell(p);
-   if(!catalog[id]||!catalog[id].url){
-     status.textContent='⚠ Envie primeiro a imagem do token na ficha ou no app do boss';
-     action=null;vp.classList.remove('drag');draw();return;
-   }
-   const existing=tokens.find(t=>t.id===id);
-   if(existing){existing.x=at.x;existing.y=at.y;}else tokens.push({id,x:at.x,y:at.y});}
  action=null;vp.classList.remove('drag');draw();
- if(mode==='token'||mode==='place')save();
+ if(mode==='token')save();
  if(mode==='map')saveMapConfig();
 });
 vp.addEventListener('contextmenu',e=>{e.preventDefault();const t=tokenAt(position(e));if(t){tokens=tokens.filter(x=>x!==t);save();}});
-document.getElementById('lock').onclick=()=>{
- locked=!locked;const el=document.getElementById('lock');el.classList.toggle('active',locked);
- el.textContent=locked?'🔒 Mapa travado':'🔓 Editar mapa';
+document.getElementById('add').onclick=()=>{
+ const id=tokenSelect.value;if(!catalog[id]?.url){status.textContent='Envie o PNG do token';return;}
+ let t=tokens.find(t=>t.id===id);
+ if(!t){const at=cell({x:vp.clientWidth/2,y:vp.clientHeight/2});t={id,...at,size:Number(sizeControl.value)};move(t,t.x,t.y);tokens.push(t);save();}
+ select(t);vp.focus();draw();
 };
+tokenSelect.onchange=()=>{selected=tokenSelect.value;const t=tokens.find(t=>t.id===selected);if(t)select(t);draw();};
+sizeControl.onchange=()=>{const t=tokens.find(t=>t.id===tokenSelect.value);if(t){t.size=Number(sizeControl.value);move(t,t.x,t.y);select(t);save();vp.focus();}};
+vp.onkeydown=e=>{const d={ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]}[e.key];const t=tokens.find(t=>t.id===selected);if(d&&t){e.preventDefault();move(t,t.x+d[0],t.y+d[1]);save();}};
+vp.onpointercancel=()=>{action=null;vp.classList.remove('drag');draw();};
 document.getElementById('measure').onclick=()=>{
  measure=!measure;document.getElementById('measure').classList.toggle('active',measure);
 };

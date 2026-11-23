@@ -51,7 +51,7 @@ h4, h5 {margin:.1rem 0 .35rem 0 !important;padding:0 !important;font-size:.95rem
 .chat-card {background:#1a1d27;border:1px solid #363948;border-left:3px solid #9c7bff;border-radius:8px;padding:6px 9px;margin:0 0 6px 0;font-size:.86rem}
 .chat-card.dice {border-left-color:#5488ff;background:#152238}.chat-card.attack {border-left-color:#ef4250;background:#321821;box-shadow:inset 0 0 16px #6f1f2633}.chat-card.defense {border-left-color:#45bd83;background:#142b24}
 .boss-name{text-align:center;font-family:"UnifrakturCook","Old English Text MT",Georgia,serif;font-size:1.55rem;font-weight:800;letter-spacing:.045em;color:#efc9aa;text-shadow:none;margin:6px 0}
-.boss-image-frame{height:460px;width:100%;display:flex;justify-content:center;align-items:center;overflow:hidden;border-radius:10px;border:1px solid #34333e;background:#12141b}
+.boss-image-frame{height:535px;width:100%;display:flex;justify-content:center;align-items:center;overflow:hidden;border-radius:10px;border:1px solid #34333e;background:#12141b}
 .boss-image-frame{position:relative;isolation:isolate}
 .boss-image-frame .boss-backdrop{position:absolute;inset:-12px;width:calc(100% + 24px);height:calc(100% + 24px);object-fit:cover;filter:blur(18px) brightness(.35);opacity:.75;z-index:-1}
 .boss-image-frame .boss-focus{display:block;max-width:100%;height:100%;width:auto;object-fit:contain;object-position:center;margin:auto}
@@ -65,7 +65,7 @@ h4, h5 {margin:.1rem 0 .35rem 0 !important;padding:0 !important;font-size:.95rem
 .boss-image-frame img{width:100%;height:100%;object-fit:contain;object-position:center}
 .scene-image-frame{height:285px;width:100%;display:flex;align-items:center;justify-content:center;overflow:hidden;border:1px solid #343744;border-radius:10px;background:#10141c}
 .scene-image-frame img{width:100%;height:100%;object-fit:contain}
-@media(max-width:1000px){.boss-image-frame{height:410px}.scene-image-frame{height:230px}}
+@media(max-width:1000px){.scene-image-frame{height:230px}}
 
 .boss-bar{height:18px;border-radius:12px;background:#292025;overflow:hidden;border:1px solid #5c2930}.boss-bar div{height:100%;background:linear-gradient(90deg,#731522,#ed3444);transition:width .4s}
 .boss-empty{min-height:180px;border:1px solid #282b34;border-radius:14px;background:#121318}
@@ -80,7 +80,8 @@ div[data-testid="stButton"] button[kind="primary"] {background:#971f2d;border-co
 """, unsafe_allow_html=True)
 
 PLAYER_IDS = ["jogador_1", "jogador_2", "jogador_3"]
-PLAYER_LABELS = {"jogador_1": "Kuro", "jogador_2": "Andrias", "jogador_3": "Bondobo"}
+ROLE_SLOT = {"jogador_1": "jogador_2", "jogador_2": "jogador_3", "jogador_3": "jogador_1"}
+PLAYER_LABELS = {"jogador_1": "Bondobo", "jogador_2": "Kuro", "jogador_3": "Andrias"}
 DICE_SIDES = [4, 6, 8, 10, 12, 20, 100]
 DEFENSES = [("Parry", "parry"), ("Rolagem", "rolagem"), ("Bloquear", "bloquear"), ("Pular", "pular"), ("Correr", "correr")]
 ATTR_ABBR = [("Força", "FOR"), ("Destreza", "DES"), ("Constituição", "CON"), ("Inteligência", "INT"),
@@ -543,9 +544,9 @@ def left_column(pid, chars):
     st.markdown("#### Personagem")
     if ss.get("_midnight_role") not in PLAYER_IDS:
         st.selectbox("Personagem", PLAYER_IDS, key="sel_player", label_visibility="collapsed",
-                     format_func=lambda p: f"{PLAYER_LABELS[p]} — {char_name(chars.get(p), p)}")
+                     format_func=lambda p: char_name(chars.get(p), p))
     else:
-        ss["sel_player"] = ss["_midnight_role"]
+        ss["sel_player"] = ROLE_SLOT[ss["_midnight_role"]]
     render_notice()
     with st.container(border=True, key="character-sheet-block"):
         stat_col, defense_col, skills_col = st.columns([3.7, 1.45, 1.8], gap="small")
@@ -574,7 +575,25 @@ def left_column(pid, chars):
 @_live(3)
 def scene_panel():
     display = load_app_state("table_display", {}) or {}
-    st.markdown("##### Ilustração")
+    heading, token_box = st.columns([1, 1])
+    heading.markdown("##### Ilustração")
+    pid = ss["sel_player"]
+    with token_box.popover("Token PNG"):
+        file = st.file_uploader("PNG do personagem", type=["png"], key=f"panel_token_{pid}")
+        if file and st.button("Salvar token", key=f"save_token_{pid}"):
+            from PIL import Image
+            try:
+                image = Image.open(file)
+                if image.format != "PNG":
+                    raise ValueError("Escolha um arquivo PNG.")
+                image.verify()
+                url = upload_asset(f"tokens/{pid}/{uuid.uuid4().hex}.png", file.getvalue(), "image/png")
+                if url and patch_character(pid, {"token_url": url}):
+                    st.success("Token publicado.")
+                else:
+                    st.error("Falha ao publicar o token.")
+            except (ValueError, OSError) as exc:
+                st.error(str(exc))
     if ss.get("_midnight_role") not in PLAYER_IDS:
         with st.popover("📤", help="Trocar ilustração da cena"):
             from image_manager import render_image_editor
@@ -707,7 +726,7 @@ def render_grid(chars):
     catalog = {}
     for pid in PLAYER_IDS:
         character = chars.get(pid) or {}
-        catalog[pid] = {"label": PLAYER_LABELS[pid],
+        catalog[pid] = {"label": char_name(character, pid),
                         "url": character.get("token_url", ""),
                         "emoji": "🛡️"}
     for slot in range(1, 6):
@@ -775,7 +794,7 @@ def shared_animation():
                 [{"label": "", "sides": die["sides"], "values": die["results"]}],
                 totals=[{"label": "Total", "value": die.get("total", 0)}])
             if latest.get("message_type") == "defense" and data.get("defense_key") == "parry":
-                sounds = {"jogador_1": KURO_PARRY_AUDIO, "jogador_2": ANDRIAS_PARRY_AUDIO}
+                sounds = {"jogador_2": KURO_PARRY_AUDIO, "jogador_3": ANDRIAS_PARRY_AUDIO}
                 special_audio = sounds.get(data.get("player_id"))
                 if special_audio:
                     spec["sound_url"] = special_audio
@@ -808,6 +827,8 @@ def main():
 
     chars = {pid: fresh(pid) for pid in PLAYER_IDS}
     ss["_char_names"] = {pid: char_name(chars[pid], pid) for pid in PLAYER_IDS}
+    if ss.get("_midnight_role") in ROLE_SLOT:
+        ss["sel_player"] = ROLE_SLOT[ss["_midnight_role"]]
     pid = ss["sel_player"] if ss["sel_player"] in PLAYER_IDS else PLAYER_IDS[0]
 
     character_col, communication_col, scene_col = st.columns(
@@ -823,7 +844,7 @@ def main():
         shared_animation()
         scene_panel()
 
-    boss_col, map_col = st.columns([4.15, 6.15], gap="small")
+    boss_col, map_col = st.columns([1, 1], gap="small")
     with boss_col:
         boss_panel()
     with map_col:

@@ -84,8 +84,8 @@ class TestCoreRules(unittest.TestCase):
         stage = (ROOT / "dice3d.py").read_text(encoding="utf-8")
         self.assertIn('"player_id": pid, "defense_key": key', panel)
         self.assertIn('data.get("defense_key") == "parry"', panel)
-        self.assertIn('"jogador_1": KURO_PARRY_AUDIO', panel)
-        self.assertIn('"jogador_2": ANDRIAS_PARRY_AUDIO', panel)
+        self.assertIn('"jogador_2": KURO_PARRY_AUDIO', panel)
+        self.assertIn('"jogador_3": ANDRIAS_PARRY_AUDIO', panel)
         self.assertNotIn("def parry_sound_settings()", panel)
         self.assertIn('SPEC.sound_kind === "parry"', stage)
         self.assertIn('new Audio(SPEC.sound_url)', stage)
@@ -105,7 +105,7 @@ class TestCoreRules(unittest.TestCase):
 
     def test_bottom_ratio_and_simple_dice_labels(self):
         source = (ROOT / "painel_geral.py").read_text(encoding="utf-8")
-        self.assertIn("st.columns([4.15, 6.15]", source)
+        self.assertIn("st.columns([1, 1]", source)
         self.assertIn('col.button(f"d{sides}"', source)
 
     def test_gif_keeps_animation(self):

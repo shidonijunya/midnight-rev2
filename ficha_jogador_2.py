@@ -257,7 +257,7 @@ MODALIDADES = ["Normal", "Carregado", "Weapon Art"]
 DICE_SIDES_OPTIONS = [4, 6, 8, 10, 12, 20, 100]
 
 DEFESAS = {"Parry": "parry", "Rolagem": "rolagem", "Bloquear": "bloquear", "Pular": "pular", "Correr": "correr"}
-PLAYER_ID = "jogador_2"
+PLAYER_ID = "jogador_3"
 PLAYER_NAME = "Andrias"
 
 # Tabela de Fragmentos de Essência necessários para cada nível (1 a 99)

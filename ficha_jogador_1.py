@@ -522,6 +522,31 @@ def render_header():
 
 
 
+
+def render_version_history():
+    """Browse snapshots; only a logged-in master can restore older values."""
+    from shared_backend import list_character_history, restore_character_version, auth_configured
+    versions = list_character_history(PLAYER_ID)
+    if not versions:
+        return
+    with st.expander("Histórico da ficha", expanded=False):
+        chosen = st.selectbox("Versões anteriores", range(len(versions)),
+            format_func=lambda i: str(versions[i].get("saved_at", "?"))[:19].replace("T", " ") +
+                                " — " + str(versions[i].get("reason", "edição")),
+            key=f"history_version_{PLAYER_ID}")
+        snapshot = versions[chosen].get("data", {})
+        st.caption("Nome: " + str(snapshot.get("nome_personagem", "?")) +
+                   " · Nível: " + str(snapshot.get("nivel", "?")))
+        if auth_configured() and st.session_state.get("_midnight_role") == "mestre":
+            confirm = st.checkbox("Confirmo a restauração desta versão", key=f"confirm_history_{PLAYER_ID}")
+            if st.button("Restaurar versão", disabled=not confirm, key=f"restore_history_{PLAYER_ID}"):
+                if restore_character_version(PLAYER_ID, chosen):
+                    st.session_state.pop("ficha_inicializada", None)
+                    st.rerun()
+                st.error("Não foi possível restaurar a versão selecionada.")
+
+
+
 # ============================================================
 # RENDER: ATRIBUTOS
 # ============================================================
@@ -1017,6 +1042,7 @@ def main():
     sync_shared_state()
 
     render_header()
+    render_version_history()
     render_barras()
     render_destaques()
     render_atributos()

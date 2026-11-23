@@ -118,6 +118,35 @@ class SafetyTests(unittest.TestCase):
         self.assertEqual(target["turn_numbers"]["Kriv"], 4)
         self.assertEqual(target["histories"]["Kriv"][0]["results"][0]["attack"].id, 1)
 
+    def test_boss_attack_count_is_configurable(self):
+        from pathlib import Path
+        root = Path(__file__).resolve().parents[1]
+        code = (root / "app_boss.py").read_text(encoding="utf-8")
+        self.assertIn('1 <= len(raw_attacks) <= 20', code)
+        self.assertIn('"Quantidade de ataques"', code)
+        self.assertNotIn('physical_count != 5 or area_count != 5', code)
+        self.assertIn('hydrate_runtime(bosses, st.session_state)', code)
+        self.assertIn('persist_runtime(bosses, st.session_state)', code)
+
+    def test_security_mode_is_explicit_and_browser_map_hides_anon_key(self):
+        from pathlib import Path
+        root = Path(__file__).resolve().parents[1]
+        auth = (root / "auth_unified.py").read_text(encoding="utf-8")
+        map_code = (root / "tactical_map.py").read_text(encoding="utf-8")
+        self.assertIn("MIDNIGHT_SECURE_MODE", auth)
+        self.assertIn('anon = "" if secure_mode_enabled()', map_code)
+        self.assertTrue((root / "security_cutover.sql").exists())
+
+    def test_fog_area_effects_share_a_single_poll(self):
+        from pathlib import Path
+        root = Path(__file__).resolve().parents[1]
+        map_code = (root / "tactical_map.py").read_text(encoding="utf-8")
+        for tool in ("fog_hide", "fog_reveal", "area_circle", "area_cone", "area_line"):
+            self.assertIn(tool, map_code)
+        self.assertIn("battle_effects", map_code)
+        self.assertIn("key=in.(battle_grid,battle_effects)", map_code)
+        self.assertNotIn("async function pollEffects()", map_code)
+
     def test_variable_weapons_keep_existing_data_in_source(self):
         from pathlib import Path
         root = Path(__file__).resolve().parents[1]

@@ -10,9 +10,10 @@ existentes são mantidos; não criar um novo projeto.
   de defaults no lugar de uma ficha existente.
 - Atualizações de recurso de ataques/defesas usam CAS em `updated_at` e
   **recalculam o desconto com valores recentes** em toda tentativa.
-- Histórico das últimas 30 versões por jogador no `app_state`. Registro por
-  sucesso de edição, com consulta na ficha. Restaurar exige mestre autenticado
-  e confirmação; snapshots são armazenados sem criar novas tabelas.
+- Histórico das últimas 30 versões por jogador no `app_state`. Registro
+  por edição e restauração condicionados à ativação do modo seguro; antes disso,
+  nenhum snapshot histórico é exposto nas tabelas ainda públicas. Restaurar
+  exige mestre autenticado e confirmação; não são criadas novas tabelas.
 - Estado dos chefes salvo em `app_state.boss_runtime` com revisão CAS.
   HP, turnos, condições e rolagens do histórico são serializados.
 - Removidas as escritas passivas do simulador: não sobrescrever o boss só

@@ -1,5 +1,4 @@
 import json
-import math
 import os
 
 import streamlit as st
@@ -255,9 +254,8 @@ PERICIAS = {
 
 ARMOR_SLOTS = ["Peitoral", "Capacete", "Braçadeiras", "Botas"]
 
-NUM_ARMAS = 5
+NUM_ARMAS = 12  # capacidade máxima; as 5 armas antigas continuam visíveis por padrão
 NUM_INVENTARIO = 15
-NUM_ACOES_TURNO = 10
 
 MODALIDADES = ["Normal", "Carregado", "Weapon Art"]
 
@@ -266,27 +264,6 @@ DICE_SIDES_OPTIONS = [4, 6, 8, 10, 12, 20, 100]
 DEFESAS = {"Parry": "parry", "Rolagem": "rolagem", "Bloquear": "bloquear", "Pular": "pular", "Correr": "correr"}
 PLAYER_ID = "jogador_3"
 PLAYER_NAME = "Andrias"
-
-# Tabela de Fragmentos de Essência necessários para cada nível (1 a 99)
-XP_TABLE = {
-    1: 255, 2: 319, 3: 399, 4: 470, 5: 550, 6: 667, 7: 834, 8: 1003, 9: 1201,
-    10: 1382, 11: 1589, 12: 1827, 13: 2101, 14: 2416, 15: 2593, 16: 2853,
-    17: 3281, 18: 3773, 19: 4338, 20: 4772, 21: 5249, 22: 5774, 23: 6352,
-    24: 6987, 25: 7686, 26: 8454, 27: 9130, 28: 9861, 29: 10649, 30: 11501,
-    31: 12421, 32: 13415, 33: 14488, 34: 15647, 35: 16899, 36: 18251,
-    37: 19711, 38: 21288, 39: 22991, 40: 24830, 41: 25823, 42: 26856,
-    43: 27930, 44: 29048, 45: 30210, 46: 31418, 47: 32675, 48: 33328,
-    49: 33995, 50: 34675, 51: 35368, 52: 36075, 53: 36797, 54: 37533,
-    55: 38283, 56: 39049, 57: 39830, 58: 40627, 59: 41439, 60: 42268,
-    61: 43113, 62: 43976, 63: 44855, 64: 45752, 65: 46667, 66: 47600,
-    67: 48552, 68: 49524, 69: 50514, 70: 51524, 71: 52555, 72: 53606,
-    73: 54678, 74: 55771, 75: 56887, 76: 58025, 77: 59185, 78: 60369,
-    79: 61576, 80: 62808, 81: 64064, 82: 65345, 83: 66652, 84: 67985,
-    85: 69345, 86: 70732, 87: 72146, 88: 73589, 89: 75061, 90: 76562,
-    91: 78093, 92: 79655, 93: 81248, 94: 82873, 95: 84531, 96: 86221,
-    97: 87946, 98: 89705, 99: 91499,
-}
-
 
 # ============================================================
 # FÓRMULAS DO SISTEMA
@@ -345,13 +322,6 @@ def inventory_keys(i):
     }
 
 
-def turn_keys(i):
-    return {
-        "arma": f"turno_{i}_arma",
-        "modalidade": f"turno_{i}_modalidade",
-    }
-
-
 def build_default_state() -> dict:
     """Constrói o dicionário completo de valores padrão da ficha."""
 
@@ -359,7 +329,7 @@ def build_default_state() -> dict:
         "nome_personagem": PLAYER_NAME,
         "nivel": 1,
         "fragmentos_essencia": 0,
-        "pontos_atributo": 0,
+        "weapon_slots_count": 5,
         "requiem_atual": 0,
         "hp_atual": None,
         "mana_atual": None,
@@ -406,11 +376,6 @@ def build_default_state() -> dict:
         state[keys["qtd"]] = 0
         state[keys["desc"]] = ""
 
-    for i in range(NUM_ACOES_TURNO):
-        keys = turn_keys(i)
-        state[keys["arma"]] = "Nenhuma"
-        state[keys["modalidade"]] = "Normal"
-
     return state
 
 
@@ -419,7 +384,7 @@ def all_persisted_keys():
 
     keys = [
         "nome_personagem", "nivel", "fragmentos_essencia",
-        "pontos_atributo", "requiem_atual",
+        "weapon_slots_count", "requiem_atual",
         "hp_atual", "mana_atual", "estamina_atual", "imagem_url", "token_url",
     ]
 
@@ -441,37 +406,12 @@ def all_persisted_keys():
     for i in range(NUM_INVENTARIO):
         keys.extend(inventory_keys(i).values())
 
-    for i in range(NUM_ACOES_TURNO):
-        keys.extend(turn_keys(i).values())
-
     return keys
 
 
 # ============================================================
 # PERSISTÊNCIA (arquivo local + download/upload no navegador)
 # ============================================================
-
-def load_from_disk():
-    if os.path.exists(DATA_FILE):
-        try:
-            with open(DATA_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except (json.JSONDecodeError, OSError):
-            return None
-    return None
-
-
-def save_to_disk(data: dict):
-    try:
-        tmp_file = DATA_FILE + ".tmp"
-        with open(tmp_file, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-        os.replace(tmp_file, DATA_FILE)
-    except OSError:
-        # Em ambientes hospedados sem escrita em disco, ignora silenciosamente.
-        # O jogador ainda pode usar Baixar/Carregar Ficha (.json).
-        pass
-
 
 def collect_state() -> dict:
     return {k: st.session_state[k] for k in all_persisted_keys() if k in st.session_state}
@@ -543,24 +483,6 @@ def resetar_estamina_callback():
     st.session_state["estamina_atual"] = calc_estamina_max(
         atributos["Fortitude"], atributos["Força"], atributos["Destreza"]
     )
-
-
-def aplicar_ponto_atributo_callback(atributo_escolhido):
-    if st.session_state["pontos_atributo"] > 0:
-        st.session_state[attr_key(atributo_escolhido)] += 1
-        st.session_state["pontos_atributo"] -= 1
-
-
-def carregar_upload_callback():
-    arquivo = st.session_state.get("uploader_ficha")
-    if arquivo is None:
-        return
-    try:
-        data = json.loads(arquivo.getvalue().decode("utf-8"))
-        apply_loaded_data(data)
-        st.session_state["_upload_ok"] = True
-    except (json.JSONDecodeError, UnicodeDecodeError):
-        st.session_state["_upload_ok"] = False
 
 
 # ============================================================
@@ -864,8 +786,10 @@ def render_defesas():
 def render_armas():
 
     with st.expander("Armas", expanded=False):
-
-        for i in range(NUM_ARMAS):
+        st.number_input("Quantidade de armas", min_value=1, max_value=NUM_ARMAS,
+                        step=1, key="weapon_slots_count",
+                        help="Ao reduzir a quantidade, os dados dos slots ocultos são preservados.")
+        for i in range(int(st.session_state["weapon_slots_count"])):
 
             keys = weapon_keys(i)
 
@@ -982,7 +906,7 @@ def render_armas():
 
 
 def get_weapon_names():
-    return [st.session_state[weapon_keys(i)["nome"]] or f"Arma {i + 1}" for i in range(NUM_ARMAS)]
+    return [st.session_state[weapon_keys(i)["nome"]] or f"Arma {i + 1}" for i in range(int(st.session_state.get("weapon_slots_count", 5)))]
 
 
 # ============================================================
@@ -1060,77 +984,6 @@ def render_inventario():
     # ============================================================
     # RENDER: PLANEJADOR DE AÇÕES DO TURNO
     # ============================================================
-
-def render_planejador_turno():
-
-    with st.expander("Planejador de ações do turno", expanded=False):
-        st.caption(
-            "Ferramenta apenas de planejamento — não aplica dano nem desconta estamina automaticamente."
-        )
-
-        nomes_armas = ["Nenhuma"] + get_weapon_names()
-        custo_planejado_total = 0
-
-        for i in range(NUM_ACOES_TURNO):
-
-            keys = turn_keys(i)
-            cols = st.columns([0.4, 2.4, 1.6, 1.4])
-
-            with cols[0]:
-                st.write(f"**{i + 1}.**")
-
-            with cols[1]:
-                if st.session_state[keys["arma"]] not in nomes_armas:
-                    st.session_state[keys["arma"]] = "Nenhuma"
-                arma_escolhida = st.selectbox(
-                    f"Arma ação {i + 1}", nomes_armas,
-                    key=keys["arma"], label_visibility="collapsed"
-                )
-
-            with cols[2]:
-                modalidade = st.selectbox(
-                    f"Modalidade ação {i + 1}", MODALIDADES,
-                    key=keys["modalidade"], label_visibility="collapsed"
-                )
-
-            custo_acao = 0
-            if arma_escolhida != "Nenhuma":
-                idx_arma = nomes_armas.index(arma_escolhida) - 1
-                wkeys = weapon_keys(idx_arma)
-                custo_base = st.session_state[wkeys["custo_estamina"]]
-
-                if modalidade == "Normal":
-                    custo_acao = custo_base
-                elif modalidade == "Carregado":
-                    custo_acao = custo_base * 2
-                else:  # Weapon Art
-                    custo_acao = st.session_state[wkeys["wa_estamina"]]
-
-            with cols[3]:
-                st.write(f"Est: **{custo_acao}**")
-
-            custo_planejado_total += custo_acao
-
-        atributos = get_atributos_dict()
-        estamina_max = calc_estamina_max(atributos["Fortitude"], atributos["Força"], atributos["Destreza"])
-
-        excede = custo_planejado_total > estamina_max
-        classe = "overweight" if excede else ""
-
-        st.markdown(
-            f'<div class="info-box"><div class="info-label">Estamina planejada</div>'
-            f'<div class="info-value {classe}">{custo_planejado_total} / {estamina_max}</div></div>',
-            unsafe_allow_html=True
-        )
-        if excede:
-            st.caption("⚠️ O total planejado ultrapassa a estamina máxima (apenas informativo).")
-
-
-    # ============================================================
-    # SIDEBAR: PERSISTÊNCIA
-    # ============================================================
-
-
 
 def sync_shared_state(pull=True):
     """Only patch changed fields; never send an old copy of all resources."""

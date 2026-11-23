@@ -46,6 +46,15 @@ def pack_runtime(bosses, state):
             "history": [_turn_to_data(t) for t in history[:100]],
             "statuses": list(state.get("statuses", {}).get(name, [])),
         }
+    manual = state.get("manual_result")
+    selected = state.get("selected_boss")
+    if isinstance(manual, dict) and selected in bosses:
+        attack = manual.get("attack")
+        snapshot["manual_result"] = {
+            "boss": selected,
+            "attack_id": getattr(attack, "id", None),
+            "result": manual.get("result") or {},
+        }
     return snapshot
 
 
@@ -66,6 +75,12 @@ def apply_runtime(bosses, state, snapshot):
             if (turn := _turn_from_data(item, boss)) is not None
         ]
         state["statuses"][name] = list(values.get("statuses") or [])
+    manual = snapshot.get("manual_result") or {}
+    name = manual.get("boss")
+    if name in bosses:
+        attack = next((a for a in bosses[name].attacks if a.id == manual.get("attack_id")), None)
+        if attack is not None:
+            state["manual_result"] = {"attack": attack, "result": manual.get("result") or {}}
 
 
 def hydrate_runtime(bosses, state):

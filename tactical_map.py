@@ -87,11 +87,12 @@ function fit(){scale=Math.min(vp.clientWidth/W,vp.clientHeight/H);offsetX=(vp.cl
 function position(e){const r=vp.getBoundingClientRect();return {x:e.clientX-r.left,y:e.clientY-r.top};}
 function world(p){return {x:(p.x-offsetX)/scale,y:(p.y-offsetY)/scale};}
 function cell(p){const w=world(p);return {x:Math.max(0,Math.min(COLS-1,Math.floor(w.x/CELL))),y:Math.max(0,Math.min(ROWS-1,Math.floor(w.y/CELL)))};}
+const instance=t=>t.instance||t.id;
 let selected=null;
 const sizeControl=document.getElementById('size');
 function side(t){return Math.max(1,Math.min(4,Number(t.size)||1));}
 function move(t,x,y){t.x=Math.max(0,Math.min(COLS-side(t),x));t.y=Math.max(0,Math.min(ROWS-side(t),y));}
-function select(t){selected=t.id;tokenSelect.value=t.id;sizeControl.value=side(t);}
+function select(t){selected=instance(t);tokenSelect.value=t.id;sizeControl.value=side(t);}
 function tokenAt(p){const w=world(p);return [...tokens].reverse().find(t=>w.x>=t.x*CELL&&w.x<(t.x+side(t))*CELL&&w.y>=t.y*CELL&&w.y<(t.y+side(t))*CELL);}
 function renderMap(){setBackground();ctx.setTransform(DPR,0,0,DPR,0,0);ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';ctx.fillStyle='#111827';ctx.fillRect(0,0,W,H);
  if(background&&background.complete&&background.naturalWidth){
@@ -127,7 +128,7 @@ function renderMap(){setBackground();ctx.setTransform(DPR,0,0,DPR,0,0);ctx.image
      ctx.fillText('SEM PNG',x,y);
    }
   }
-  if(selected===t.id){ctx.strokeStyle='#88d8ff';ctx.lineWidth=3/scale;ctx.strokeRect(t.x*CELL,t.y*CELL,span,span);}
+  if(selected===instance(t)){ctx.strokeStyle='#88d8ff';ctx.lineWidth=3/scale;ctx.strokeRect(t.x*CELL,t.y*CELL,span,span);}
  }
  if(action&&(action.mode==='measure'||action.measuring)){
   const a=action.start,b=action.end||a;
@@ -177,7 +178,7 @@ vp.addEventListener('pointerdown',e=>{
  if(e.button!==0)return;
  vp.focus();const p=position(e),w=world(p),target=tokenAt(p);
  if(e.ctrlKey||measure){action={mode:'measure',start:w,end:w};}
- else if(target){select(target);const at=cell(p);action={mode:'token',id:target.id,dx:target.x-at.x,dy:target.y-at.y,measuring:e.shiftKey,start:w,end:w};}
+ else if(target){select(target);const at=cell(p);action={mode:'token',id:instance(target),dx:target.x-at.x,dy:target.y-at.y,measuring:e.shiftKey,start:w,end:w};}
  else{action={mode:'pan',p,ox:offsetX,oy:offsetY};}
  vp.setPointerCapture(e.pointerId);vp.classList.add('drag');draw();
 });
@@ -185,7 +186,7 @@ vp.addEventListener('pointermove',e=>{
  if(!action)return;const p=position(e),w=world(p);
  if(action.mode==='measure')action.end=w;
  if(action.mode==='pan'){offsetX=action.ox+p.x-action.p.x;offsetY=action.oy+p.y-action.p.y;}
- if(action.mode==='token'){const t=tokens.find(t=>t.id===action.id);if(t){const at=cell(p);move(t,at.x+action.dx,at.y+action.dy);action.end=w;}}
+ if(action.mode==='token'){const t=tokens.find(t=>instance(t)===action.id);if(t){const at=cell(p);move(t,at.x+action.dx,at.y+action.dy);action.end=w;}}
  if(action.mode==='map'){config.pan_x=Math.max(-1,Math.min(1,action.panX+(p.x-action.p.x)/(W*scale)*2));config.pan_y=Math.max(-1,Math.min(1,action.panY+(p.y-action.p.y)/(H*scale)*2));}
  draw();
 });
@@ -198,13 +199,15 @@ vp.addEventListener('pointerup',e=>{
 vp.addEventListener('contextmenu',e=>{e.preventDefault();const t=tokenAt(position(e));if(t){tokens=tokens.filter(x=>x!==t);save();}});
 document.getElementById('add').onclick=()=>{
  const id=tokenSelect.value;if(!catalog[id]?.url){status.textContent='Envie o PNG do token';return;}
- let t=tokens.find(t=>t.id===id);
- if(!t){const at=cell({x:vp.clientWidth/2,y:vp.clientHeight/2});t={id,...at,size:Number(sizeControl.value)};move(t,t.x,t.y);tokens.push(t);save();}
+ if(tokens.length>=150){status.textContent='Limite de 150 peças';return;}
+ const at=cell({x:vp.clientWidth/2,y:vp.clientHeight/2});
+ const t={id,instance:crypto.randomUUID(),...at,size:Number(sizeControl.value)};
+ move(t,t.x,t.y);tokens.push(t);save();
  select(t);vp.focus();draw();
 };
-tokenSelect.onchange=()=>{selected=tokenSelect.value;const t=tokens.find(t=>t.id===selected);if(t)select(t);draw();};
-sizeControl.onchange=()=>{const t=tokens.find(t=>t.id===tokenSelect.value);if(t){t.size=Number(sizeControl.value);move(t,t.x,t.y);select(t);save();vp.focus();}};
-vp.onkeydown=e=>{const d={ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]}[e.key];const t=tokens.find(t=>t.id===selected);if(d&&t){e.preventDefault();move(t,t.x+d[0],t.y+d[1]);save();}};
+tokenSelect.onchange=()=>{selected=null;const t=tokens.find(t=>t.id===tokenSelect.value);if(t)select(t);draw();};
+sizeControl.onchange=()=>{const t=tokens.find(t=>instance(t)===selected);if(t){t.size=Number(sizeControl.value);move(t,t.x,t.y);select(t);save();vp.focus();}};
+vp.onkeydown=e=>{const d={ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]}[e.key];const t=tokens.find(t=>instance(t)===selected);if(d&&t){e.preventDefault();move(t,t.x+d[0],t.y+d[1]);save();}};
 vp.onpointercancel=()=>{action=null;vp.classList.remove('drag');draw();};
 document.getElementById('measure').onclick=()=>{
  measure=!measure;document.getElementById('measure').classList.toggle('active',measure);

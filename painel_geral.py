@@ -13,6 +13,8 @@ from shared_backend import (shared_enabled, load_character, save_character, patc
                             publish_roll, send_chat_message, get_chat_messages, clean_author,
                             config_value)
 import dice3d
+from shared_backend import ROLE_SLOT
+from parry_bondobo_asset import DATA_URI as BONDOBO_PARRY_AUDIO
 from parry_kuro_asset import DATA_URI as KURO_PARRY_AUDIO
 from parry_andrias_asset import DATA_URI as ANDRIAS_PARRY_AUDIO
 
@@ -63,9 +65,9 @@ h4, h5 {margin:.1rem 0 .35rem 0 !important;padding:0 !important;font-size:.95rem
 .st-key-character-sheet-block h5{font-size:.70rem!important;letter-spacing:.025em}
 
 .boss-image-frame img{width:100%;height:100%;object-fit:contain;object-position:center}
-.scene-image-frame{height:285px;width:100%;display:flex;align-items:center;justify-content:center;overflow:hidden;border:1px solid #343744;border-radius:10px;background:#10141c}
+.scene-image-frame{height:435px;width:100%;display:flex;align-items:center;justify-content:center;overflow:hidden;border:1px solid #343744;border-radius:10px;background:#10141c}
 .scene-image-frame img{width:100%;height:100%;object-fit:contain}
-@media(max-width:1000px){.scene-image-frame{height:230px}}
+@media(max-width:1000px){.scene-image-frame{height:390px}}
 
 .boss-bar{height:18px;border-radius:12px;background:#292025;overflow:hidden;border:1px solid #5c2930}.boss-bar div{height:100%;background:linear-gradient(90deg,#731522,#ed3444);transition:width .4s}
 .boss-empty{min-height:180px;border:1px solid #282b34;border-radius:14px;background:#121318}
@@ -80,7 +82,7 @@ div[data-testid="stButton"] button[kind="primary"] {background:#971f2d;border-co
 """, unsafe_allow_html=True)
 
 PLAYER_IDS = ["jogador_1", "jogador_2", "jogador_3"]
-ROLE_SLOT = {"jogador_1": "jogador_2", "jogador_2": "jogador_3", "jogador_3": "jogador_1"}
+
 PLAYER_LABELS = {"jogador_1": "Bondobo", "jogador_2": "Kuro", "jogador_3": "Andrias"}
 DICE_SIDES = [4, 6, 8, 10, 12, 20, 100]
 DEFENSES = [("Parry", "parry"), ("Rolagem", "rolagem"), ("Bloquear", "bloquear"), ("Pular", "pular"), ("Correr", "correr")]
@@ -575,7 +577,7 @@ def left_column(pid, chars):
 @_live(3)
 def scene_panel():
     display = load_app_state("table_display", {}) or {}
-    heading, token_box = st.columns([1, 1])
+    heading, scene_edit, token_box = st.columns([1.4, 0.8, 1], vertical_alignment="center")
     heading.markdown("##### Ilustração")
     pid = ss["sel_player"]
     with token_box.popover("Token PNG"):
@@ -587,7 +589,7 @@ def scene_panel():
                 if image.format != "PNG":
                     raise ValueError("Escolha um arquivo PNG.")
                 image.verify()
-                url = upload_asset(f"tokens/{pid}/{uuid.uuid4().hex}.png", file.getvalue(), "image/png")
+                url = upload_asset(f"players/{pid}/tokens/{uuid.uuid4().hex}.png", file.getvalue(), "image/png")
                 if url and patch_character(pid, {"token_url": url}):
                     st.success("Token publicado.")
                 else:
@@ -595,7 +597,7 @@ def scene_panel():
             except (ValueError, OSError) as exc:
                 st.error(str(exc))
     if ss.get("_midnight_role") not in PLAYER_IDS:
-        with st.popover("📤", help="Trocar ilustração da cena"):
+        with scene_edit.popover("Cena", help="Trocar ilustração da cena"):
             from image_manager import render_image_editor
             image_url = render_image_editor(
                 "scene", "table", display.get("scene_image_url", ""), key="panel_scene")
@@ -794,7 +796,7 @@ def shared_animation():
                 [{"label": "", "sides": die["sides"], "values": die["results"]}],
                 totals=[{"label": "Total", "value": die.get("total", 0)}])
             if latest.get("message_type") == "defense" and data.get("defense_key") == "parry":
-                sounds = {"jogador_2": KURO_PARRY_AUDIO, "jogador_3": ANDRIAS_PARRY_AUDIO}
+                sounds = {"jogador_2": KURO_PARRY_AUDIO, "jogador_3": ANDRIAS_PARRY_AUDIO, "jogador_1": BONDOBO_PARRY_AUDIO}
                 special_audio = sounds.get(data.get("player_id"))
                 if special_audio:
                     spec["sound_url"] = special_audio

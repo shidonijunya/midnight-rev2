@@ -35,7 +35,7 @@ class TestCoreRules(unittest.TestCase):
         for i, name in enumerate(("Kuro", "Andrias", "Bondobo"), 1):
             source = (ROOT / f"ficha_jogador_{i}.py").read_text(encoding="utf-8")
             self.assertIn('"token_url",', source, name)
-            self.assertIn('render_image_editor("token"', source, name)
+            self.assertNotIn('render_image_editor("token"', source, name)
 
     def test_map_uses_uploaded_token_urls_not_generic_emojis(self):
         source = (ROOT / "tactical_map.py").read_text(encoding="utf-8")
@@ -96,11 +96,12 @@ class TestCoreRules(unittest.TestCase):
         import base64
         from parry_kuro_asset import DATA_URI as kuro
         from parry_andrias_asset import DATA_URI as andrias
-        for uri, expected in ((kuro, 2499), (andrias, 3988)):
+        from parry_bondobo_asset import DATA_URI as bondobo
+        for uri, expected in ((kuro, 96897), (andrias, 85589), (bondobo, 42973)):
             self.assertTrue(uri.startswith("data:audio/mpeg;base64,"))
             payload = base64.b64decode(uri.split(",", 1)[1], validate=True)
             self.assertEqual(len(payload), expected)
-            self.assertTrue(payload.startswith(b"ID3"))
+            self.assertTrue(payload.startswith(b"ID3") or payload[0] == 0xff)
 
 
     def test_bottom_ratio_and_simple_dice_labels(self):

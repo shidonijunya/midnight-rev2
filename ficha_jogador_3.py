@@ -223,6 +223,13 @@ st.markdown("""
     font-size: 0.8rem;
 }
 
+[data-testid="stVerticalBlock"] { gap: .38rem; }
+.block-container { padding-top: 1rem; padding-bottom: 1rem; }
+.bar-container:empty { display: none; }
+.bar-value { font-size: 1.1rem; margin: 0; }
+.bar-bg { height: 10px; }
+.info-box,.attr-box,.stat-highlight { padding: 5px 8px; }
+.main-title { font-size: 1.55rem; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -612,16 +619,13 @@ def render_header():
             "Fragmentos de Essência", min_value=0, step=1, key="fragmentos_essencia"
         )
 
-    from image_manager import render_image_editor
-    new_image_url = render_image_editor("portrait", PLAYER_ID,
-                  st.session_state.get("imagem_url", ""), key=f"portrait_{PLAYER_ID}")
-    if new_image_url != st.session_state.get("imagem_url"):
-        st.session_state["imagem_url"] = new_image_url
-    with st.expander("🎯 Token do mapa (PNG transparente)", expanded=False):
-        new_token = render_image_editor("token", PLAYER_ID,
-                       st.session_state.get("token_url", ""), key=f"token_{PLAYER_ID}")
-        if new_token != st.session_state.get("token_url"):
-            st.session_state["token_url"] = new_token
+    with st.expander("Retrato do personagem"):
+        from image_manager import render_image_editor
+        new_image_url = render_image_editor("portrait", PLAYER_ID,
+                      st.session_state.get("imagem_url", ""), key=f"portrait_{PLAYER_ID}")
+        if new_image_url != st.session_state.get("imagem_url"):
+            st.session_state["imagem_url"] = new_image_url
+
 
 
 
@@ -634,7 +638,6 @@ def render_header():
 def render_atributos():
 
     with st.expander("Atributos", expanded=False):
-        st.markdown('<div class="section-title">Atributos</div>', unsafe_allow_html=True)
 
         cols = st.columns(7)
 
@@ -835,7 +838,6 @@ def render_destaques():
 def render_pericias():
 
     with st.expander("Perícias", expanded=False):
-        st.markdown('<div class="section-title">Perícias</div>', unsafe_allow_html=True)
 
         mods = get_modificadores_dict()
 
@@ -893,7 +895,6 @@ def render_defesas():
 def render_armas():
 
     with st.expander("Armas", expanded=False):
-        st.markdown('<div class="section-title">Armas</div>', unsafe_allow_html=True)
 
         for i in range(NUM_ARMAS):
 
@@ -1022,7 +1023,6 @@ def get_weapon_names():
 def render_armadura():
 
     with st.expander("Armaduras", expanded=False):
-        st.markdown('<div class="section-title">Armadura</div>', unsafe_allow_html=True)
 
         header = st.columns([1.4, 2.4, 1.2, 1.2])
         for c, txt in zip(header, ["Tipo", "Nome do Item", "Peso", "RD"]):
@@ -1057,7 +1057,6 @@ def render_armadura():
 def render_inventario():
 
     with st.expander("Inventário", expanded=False):
-        st.markdown('<div class="section-title">Inventário</div>', unsafe_allow_html=True)
 
         col_a, col_b = st.columns(2)
         metade = (NUM_INVENTARIO + 1) // 2
@@ -1096,7 +1095,6 @@ def render_inventario():
 def render_planejador_turno():
 
     with st.expander("Planejador de ações do turno", expanded=False):
-        st.markdown('<div class="section-title">Planejador de Ações do Turno</div>', unsafe_allow_html=True)
         st.caption(
             "Ferramenta apenas de planejamento — não aplica dano nem desconta estamina automaticamente."
         )
@@ -1197,9 +1195,9 @@ def main():
     sync_shared_state()
 
     render_header()
-    render_atributos()
     render_barras()
     render_destaques()
+    render_atributos()
     render_pericias()
     render_defesas()
     render_armas()

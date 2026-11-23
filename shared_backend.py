@@ -51,8 +51,16 @@ def get_player_id(default="jogador_1"):
     return str(config_value("PLAYER_ID", default))
 
 
+ROLE_SLOT = {"jogador_1": "jogador_2", "jogador_2": "jogador_3", "jogador_3": "jogador_1"}
+
+
+def can_access_character(player_id):
+    role = st.session_state.get("_midnight_role")
+    return role == "mestre" or (role in ROLE_SLOT and ROLE_SLOT[role] == player_id)
+
+
 def load_character(player_id):
-    if auth_configured() and st.session_state.get("_midnight_role") not in (player_id, "mestre"):
+    if auth_configured() and not can_access_character(player_id):
         return None
     client = get_client()
     if client is None:
@@ -75,7 +83,7 @@ def auth_configured():
 
 
 def save_character(player_id, data):
-    if auth_configured() and st.session_state.get("_midnight_role") not in (player_id, "mestre"):
+    if auth_configured() and not can_access_character(player_id):
         return False
     client = get_client()
     if client is None:
@@ -96,7 +104,7 @@ def patch_character(player_id, changes, attempts=5):
     """Optimistic JSONB update: preserve unrelated fields under concurrent edits."""
     if not isinstance(changes, dict) or not changes:
         return True
-    if auth_configured() and st.session_state.get("_midnight_role") not in (player_id, "mestre"):
+    if auth_configured() and not can_access_character(player_id):
         return False
     client = get_client()
     if client is None:
@@ -172,7 +180,7 @@ def upload_asset(path, file_bytes, content_type="image/png"):
         return None
     if auth_configured() and path.startswith(("scenes/", "bosses/")) and role != "mestre":
         return None
-    if auth_configured() and path.startswith("players/") and role != "mestre" and not path.startswith(f"players/{role}/"):
+    if auth_configured() and path.startswith("players/") and role != "mestre" and not path.startswith(f"players/{ROLE_SLOT.get(role)}/"):
         return None
     if not path.startswith(("scenes/", "bosses/", "players/", "chat/")):
         return None

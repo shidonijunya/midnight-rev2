@@ -491,10 +491,6 @@ def resetar_estamina_callback():
 
 def render_header():
 
-    st.markdown(
-        '<div class="main-title">🌒 Sol da Meia-Noite</div>',
-        unsafe_allow_html=True
-    )
     col1, col2, col3 = st.columns([2.5, 1, 1.5])
 
     with col1:
@@ -858,24 +854,34 @@ def render_armas():
 
                 st.markdown("**Ataque Padrão** — parâmetros manuais")
 
-                c1, c2, c3, c4, c5, c6, c7, c8 = st.columns(8)
-
+                st.markdown("**Ataque**")
+                c1, c2, c3 = st.columns(3)
                 with c1:
                     st.number_input("Dados teste", min_value=1, max_value=10, step=1, key=keys["test_dados"])
                 with c2:
                     st.selectbox("Lados teste", DICE_SIDES_OPTIONS, key=keys["test_lados"])
                 with c3:
                     st.number_input("Bônus atq.", step=1, key=keys["bonus_ataque"])
+                st.markdown("**Dano**")
+                c4, c5, c6 = st.columns(3)
                 with c4:
                     st.number_input("Dados dano", min_value=1, max_value=20, step=1, key=keys["dano_dados"])
                 with c5:
                     st.selectbox("Lados dano", DICE_SIDES_OPTIONS, key=keys["dano_lados"])
                 with c6:
                     st.number_input("Bônus dano", step=1, key=keys["bonus_dano"])
-                with c7:
-                    st.number_input("Crít. mín.", min_value=1, max_value=100, step=1, key=keys["crit_min"])
-                with c8:
-                    st.number_input("Crít. x", min_value=1, max_value=20, step=1, key=keys["crit_mult"])
+                with st.popover("Crítico e Weapon Art"):
+                    c7, c8 = st.columns(2)
+                    with c7:
+                        st.number_input("Crítico mín.", min_value=1, max_value=100, step=1, key=keys["crit_min"])
+                    with c8:
+                        st.number_input("Crítico ×", min_value=1, max_value=20, step=1, key=keys["crit_mult"])
+                    st.text_area("Descrição da Weapon Art", key=keys["wa_texto"], height=80)
+                    wc1, wc2 = st.columns(2)
+                    with wc1:
+                        st.number_input("Estamina WA", min_value=0, step=1, key=keys["wa_estamina"])
+                    with wc2:
+                        st.number_input("Mana WA", min_value=0, step=1, key=keys["wa_mana"])
 
                 st.number_input(
                     "Custo de estamina (ataque padrão)", min_value=0, step=1, key=keys["custo_estamina"]
@@ -914,18 +920,6 @@ def render_armas():
                     f'<br><span class="small-caption">Dano ×3 dados (bônus não é triplicado) · Estamina ×2</span></div>',
                     unsafe_allow_html=True
                 )
-
-                st.markdown("**Weapon Art**")
-                wc1, wc2, wc3 = st.columns([3, 1, 1])
-                with wc1:
-                    st.text_area(
-                        "Descrição da Weapon Art", key=keys["wa_texto"], height=80,
-                        label_visibility="collapsed"
-                    )
-                with wc2:
-                    st.number_input("Estamina", min_value=0, step=1, key=keys["wa_estamina"])
-                with wc3:
-                    st.number_input("Mana", min_value=0, step=1, key=keys["wa_mana"])
 
                 st.markdown('</div>', unsafe_allow_html=True)
 

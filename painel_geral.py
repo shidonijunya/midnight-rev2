@@ -13,7 +13,7 @@ from shared_backend import (shared_enabled, load_character, save_character, patc
                             publish_roll, send_chat_message, get_chat_messages, clean_author,
                             config_value)
 import dice3d
-from shared_backend import ROLE_SLOT
+from shared_backend import ROLE_SLOT, change_resources_atomic
 from parry_bondobo_asset import DATA_URI as BONDOBO_PARRY_AUDIO
 from parry_kuro_asset import DATA_URI as KURO_PARRY_AUDIO
 from parry_andrias_asset import DATA_URI as ANDRIAS_PARRY_AUDIO
@@ -271,17 +271,18 @@ def cb_defense(pid, key, label):
         return
     _, _, _, _, st_cur, st_max = resources(data)
     bonus = num(data.get(f"defesa_{key}_bonus"), 0)
-    cost = num(data.get(f"defesa_{key}_custo"), 0)
+    cost = max(0, num(data.get(f"defesa_{key}_custo"), 0))
     name = char_name(data, pid)
     if st_cur < cost:
         set_error(f"Estamina insuficiente para **{label}**: custo {cost}, disponível {st_cur}.")
         return
     roll = roll_dice(1, 20)
     total = roll[0] + bonus
-    data["estamina_atual"] = st_cur - cost
-    if not patch_character(pid, {"estamina_atual": data["estamina_atual"]}):
-        set_error("Não foi possível salvar a estamina; a defesa não foi registrada.")
+    ok_spend, updated, spend_error = change_resources_atomic(pid, {"estamina_atual": -cost})
+    if not ok_spend:
+        set_error(spend_error or "Não foi possível salvar a estamina; a defesa não foi registrada.")
         return
+    data = updated
     details = (f"{label}: 1d20 ({roll[0]}) {signed(bonus)} = **{total}**\n"
                f"Estamina: -{cost} · restante {data['estamina_atual']}/{st_max}")
     ok = publish_roll("defense", {"title": f"{name} — {label}", "details": details,
@@ -316,14 +317,15 @@ def cb_attack(pid, slot=0):
     _, _, mana_cur, _, st_cur, st_max = resources(data)
 
     if modality == "Weapon Art":
-        est, mana = num(data.get(wk + "wa_estamina"), 0), num(data.get(wk + "wa_mana"), 0)
+        est, mana = max(0, num(data.get(wk + "wa_estamina"), 0)), max(0, num(data.get(wk + "wa_mana"), 0))
         if st_cur < est or mana_cur < mana:
             set_error(f"Recursos insuficientes para a Weapon Art. Estamina: {st_cur}/{est}; mana: {mana_cur}/{mana}.")
             return
-        data["estamina_atual"], data["mana_atual"] = st_cur - est, mana_cur - mana
-        if not patch_character(pid, {"estamina_atual": data["estamina_atual"], "mana_atual": data["mana_atual"]}):
-            set_error("Não foi possível salvar os recursos; a ação não foi registrada.")
+        ok_spend, updated, spend_error = change_resources_atomic(pid, {"estamina_atual": -est, "mana_atual": -mana})
+        if not ok_spend:
+            set_error(spend_error or "Não foi possível salvar os recursos; a ação não foi registrada.")
             return
+        data = updated
         desc = str(data.get(wk + "wa_texto") or "").strip() or "Sem descrição cadastrada."
         details = (f"Weapon Art selecionada.\nDescrição: {desc}\nCusto: -{est} estamina e -{mana} mana.\n"
                    "Rolagem e efeito: manuais (a ficha não define fórmula para Weapon Art).")
@@ -345,7 +347,7 @@ def cb_attack(pid, slot=0):
     if tl not in DICE_SIDES or dl not in DICE_SIDES:
         set_error(f"A arma **{wname}** usa um tipo de dado inválido (d{tl} / d{dl}). Corrija na ficha.")
         return
-    cost = num(data.get(wk + "custo_estamina"), 0)
+    cost = max(0, num(data.get(wk + "custo_estamina"), 0))
     if modality == "Carregado":
         cost *= 2
         dd *= 3                         # regra da ficha: dano x3 dados, bônus não triplica; estamina x2
@@ -358,10 +360,11 @@ def cb_attack(pid, slot=0):
     base_damage = sum(dmg_rolls) + bd
     crit = any(v >= critmin for v in test)
     damage = base_damage * critmult if crit else base_damage
-    data["estamina_atual"] = st_cur - cost
-    if not patch_character(pid, {"estamina_atual": data["estamina_atual"]}):
-        set_error("Não foi possível salvar a estamina; o ataque não foi registrado.")
+    ok_spend, updated, spend_error = change_resources_atomic(pid, {"estamina_atual": -cost})
+    if not ok_spend:
+        set_error(spend_error or "Não foi possível salvar a estamina; o ataque não foi registrado.")
         return
+    data = updated
     dmg_line = f"Dano: {dmg_rolls} {signed(bd)} = **{base_damage}**"
     if crit:
         dmg_line += f" × {critmult} = **{damage}** (CRÍTICO)"

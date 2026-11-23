@@ -412,26 +412,6 @@ def render_status(pid):
         unsafe_allow_html=True)
 
 
-def render_party():
-    rows = []
-    for pid in PLAYER_IDS:
-        d = fresh(pid)
-        if not d:
-            rows.append(f'<div class="mini"><span>{PLAYER_LABELS[pid]}</span><span class="muted">sem dados</span></div>')
-            continue
-        hp, hpmax, mana, manamax, stam, stmax = resources(d)
-
-        def pc(a, b):
-            return (a / b * 100) if b else 0
-
-        rows.append(
-            f'<div class="mini"><span><b>{html.escape(char_name(d, pid))}</b></span><div class="bars">'
-            f'<div><i style="width:{pc(hp, hpmax):.0f}%;background:#d83342"></i></div>'
-            f'<div><i style="width:{pc(mana, manamax):.0f}%;background:#5488ff"></i></div>'
-            f'<div><i style="width:{pc(stam, stmax):.0f}%;background:#45bd83"></i></div></div></div>')
-    st.markdown('<div class="card">' + "".join(rows) + "</div>", unsafe_allow_html=True)
-
-
 _fragment = getattr(st, "fragment", None)
 
 

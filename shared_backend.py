@@ -178,7 +178,10 @@ def _archive_snapshot(player_id, previous_data, reason="update"):
     This is not a substitute for an immutable DB trigger if absolute audit
     guarantees are required. Each append uses optimistic version checking.
     """
-    if not isinstance(previous_data, dict) or not previous_data:
+    from auth_unified import secure_mode_enabled
+    # Archived versions contain historical personal character data. Do not
+    # expose them in the currently public app_state table before secure cutover.
+    if not secure_mode_enabled() or not isinstance(previous_data, dict) or not previous_data:
         return False
     client = get_client()
     if client is None:
@@ -221,7 +224,8 @@ def _archive_snapshot(player_id, previous_data, reason="update"):
 
 
 def list_character_history(player_id):
-    if auth_configured() and not can_access_character(player_id):
+    from auth_unified import secure_mode_enabled
+    if not secure_mode_enabled() or (auth_configured() and not can_access_character(player_id)):
         return []
     data = load_app_state("character_history_" + str(player_id), {})
     return list(data.get("versions", [])) if isinstance(data, dict) else []
@@ -229,7 +233,8 @@ def list_character_history(player_id):
 
 def restore_character_version(player_id, history_index):
     """Explicit master-only restoration, conditional on a configured master login."""
-    if not auth_configured() or st.session_state.get("_midnight_role") != "mestre":
+    from auth_unified import secure_mode_enabled
+    if not secure_mode_enabled() or not auth_configured() or st.session_state.get("_midnight_role") != "mestre":
         return False
     versions = list_character_history(player_id)
     if not isinstance(history_index, int) or not (0 <= history_index < len(versions)):

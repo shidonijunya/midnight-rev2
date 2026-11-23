@@ -565,7 +565,8 @@ def left_column(pid, chars):
         return
     resource_editor(pid)
     st.markdown("##### Ataques")
-    weapons = [(i, str(data.get(f"arma_{i}_nome") or f"Arma {i+1}")) for i in range(NUM_WEAPONS)]
+    visible_weapons = max(1, min(12, num(data.get("weapon_slots_count"), NUM_WEAPONS)))
+    weapons = [(i, str(data.get(f"arma_{i}_nome") or f"Arma {i+1}")) for i in range(visible_weapons)]
     for slot in range(5):
         c1, c2, c3 = st.columns([4, 3, 1], vertical_alignment="bottom")
         c1.selectbox("Arma", [i for i, _ in weapons],

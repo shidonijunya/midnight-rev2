@@ -130,13 +130,13 @@ def _ceil(x):
 
 
 def maxima(data):
-    """Máximos de HP, mana e estamina — mesmas fórmulas das fichas."""
+    """Os mesmos cálculos centrais usados nas três fichas."""
+    from game_rules import calc_hp_max, calc_mana_max, calc_estamina_max
     f, d, c, i, s, cha, fort = (attr_value(data, n) for n, _ in ATTR_ABBR)
-    hp = 50 + (c - 10) * 6 + (fort - 10) * 2
-    mana = _ceil(cha * 1.7 + s * 1.7 + i * 2.3)
-    stamina = _ceil(fort * 4.6 + f * 1.2 + d * 1.2)
+    hp = calc_hp_max(c, fort)[0]
+    mana = calc_mana_max(cha, s, i)
+    stamina = calc_estamina_max(fort, f, d)
     return max(0, hp), max(0, mana), max(0, stamina)
-
 
 def resources(data):
     """(hp, hp_max, mana, mana_max, estamina, estamina_max) com valores sempre dentro dos limites."""

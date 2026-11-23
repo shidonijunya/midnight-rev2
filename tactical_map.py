@@ -10,7 +10,10 @@ def map_html(map_config, token_catalog):
     from auth_unified import secure_mode_enabled
     anon = "" if secure_mode_enabled() else str(config_value("SUPABASE_ANON_KEY") or "")
     # No service-role key is ever embedded in client-side HTML.
-    settings = {"api": api, "anon": anon, "config": map_config or {},
+    from shared_backend import auth_configured
+    import streamlit as st
+    can_edit_effects = not auth_configured() or st.session_state.get("_midnight_role") == "mestre"
+    settings = {"can_edit_effects": can_edit_effects, "api": api, "anon": anon, "config": map_config or {},
                 "catalog": token_catalog or {}}
     source = r"""<!doctype html><html lang="pt-BR"><head><meta charset="UTF-8">
 <style>
@@ -27,6 +30,15 @@ button.active{border-color:#c5485b;background:#4a1e29}#status{margin-left:auto;c
 <select id="token"></select>
 <button id="add">Adicionar token</button><select id="size" aria-label="Tamanho do token"><option value="1">1×1</option><option value="2">2×2</option><option value="3">3×3</option><option value="4">4×4</option></select>
 <button id="measure" title="Medir distância">📏 Medir</button>
+<select id="fx_tool" title="Ferramentas de névoa e área">
+<option value="normal">Mover peças</option>
+<option value="fog_hide">Névoa: esconder</option>
+<option value="fog_reveal">Névoa: revelar</option>
+<option value="area_circle">Área: círculo</option>
+<option value="area_cone">Área: cone</option>
+<option value="area_line">Área: linha</option>
+</select>
+<button id="clear_fx" title="Remover áreas e névoa">Limpar efeitos</button>
 <button id="reset">⤢ Ajustar</button>
 <button id="clear" title="Remover todos os tokens">Limpar tokens</button>
 <span id="status">Sincronizando…</span>
@@ -48,6 +60,9 @@ ctx.setTransform(DPR,0,0,DPR,0,0);
 ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';
 const headers={'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json'};
 let config=OPT.config||{},tokens=[],scale=1,offsetX=0,offsetY=0,locked=true,measure=false,action=null;
+const fxTool=document.getElementById('fx_tool'),clearFx=document.getElementById('clear_fx');
+if(!OPT.can_edit_effects){fxTool.style.display='none';clearFx.style.display='none';}
+let fog=[],areas=[],effectsDirty=false,fxLastWrite=0,effectsReading=false;
 let lastWrite=0,dirty=false,reading=false;
 const images={};let background=null,bgUrl='',refreshingCatalog=false;
 async function refreshCatalog(){
@@ -108,9 +123,35 @@ function renderMap(){setBackground();ctx.setTransform(DPR,0,0,DPR,0,0);ctx.image
   const bh=mode==='stretch'?H*zoom:ih*factor*zoom;
   ctx.drawImage(background,(W-bw)/2+panX,(H-bh)/2+panY,bw,bh);
  }
+ // Fog overlays the image; a pale grid is drawn above it for navigation.
+ ctx.fillStyle='rgba(3,6,13,.87)';
+ for(const id of fog){const parts=String(id).split(','),x=Number(parts[0]),y=Number(parts[1]);
+  if(Number.isInteger(x)&&Number.isInteger(y)&&x>=0&&x<COLS&&y>=0&&y<ROWS)
+    ctx.fillRect(x*CELL,y*CELL,CELL,CELL);
+ }
  ctx.strokeStyle='rgba(228,236,248,.42)';ctx.lineWidth=1.05;
  for(let i=0;i<=COLS;i++){ctx.beginPath();ctx.moveTo(i*CELL+.5,0);ctx.lineTo(i*CELL+.5,H);ctx.stroke();}
  for(let i=0;i<=ROWS;i++){ctx.beginPath();ctx.moveTo(0,i*CELL+.5);ctx.lineTo(W,i*CELL+.5);ctx.stroke();}
+ function paintArea(area){
+   if(!area)return;
+   const a=area.start,b=area.end||a;
+   const dx=b.x-a.x,dy=b.y-a.y;
+   ctx.save();ctx.fillStyle='rgba(232,83,59,.18)';ctx.strokeStyle='rgba(255,140,107,.9)';ctx.lineWidth=2;
+   ctx.beginPath();
+   if(area.kind==='area_circle'){
+      const r=Math.hypot(dx,dy);ctx.arc(a.x,a.y,r,0,Math.PI*2);
+   }else if(area.kind==='area_line'){
+      const length=Math.hypot(dx,dy)||1,nx=-dy/length*CELL*.5,ny=dx/length*CELL*.5;
+      ctx.moveTo(a.x+nx,a.y+ny);ctx.lineTo(b.x+nx,b.y+ny);
+      ctx.lineTo(b.x-nx,b.y-ny);ctx.lineTo(a.x-nx,a.y-ny);ctx.closePath();
+   }else if(area.kind==='area_cone'){
+      const r=Math.hypot(dx,dy),angle=Math.atan2(dy,dx),spread=Math.PI/6;
+      ctx.moveTo(a.x,a.y);ctx.arc(a.x,a.y,r,angle-spread,angle+spread);ctx.closePath();
+   }else{return;}
+   ctx.fill();ctx.stroke();ctx.restore();
+ }
+ areas.forEach(paintArea);
+ if(action&&action.mode==='area')paintArea({kind:action.kind,start:action.start,end:action.end});
  for(const t of tokens){
   const span=side(t)*CELL,x=t.x*CELL+span/2,y=t.y*CELL+span/2,entry=catalog[t.id]||{},url=entry.url;
   const img=getImg(url);
@@ -153,6 +194,36 @@ async function save(){dirty=true;lastWrite=Date.now();draw();
   if(!r.ok)throw Error('HTTP '+r.status);dirty=false;status.textContent='● Sincronizado';
  }catch(e){status.textContent='⚠ Falha ao gravar';}
 }
+async function saveEffects(){
+ effectsDirty=true;fxLastWrite=Date.now();draw();
+ if(!remote){status.textContent='Efeitos locais';return;}
+ try{
+  const response=await fetch(API+'/rest/v1/app_state?on_conflict=key',{
+   method:'POST',headers:{...headers,Prefer:'resolution=merge-duplicates'},
+   body:JSON.stringify({key:'battle_effects',data:{fog,areas},updated_at:new Date().toISOString()})});
+  if(!response.ok)throw Error(response.status);
+  effectsDirty=false;status.textContent='● Efeitos sincronizados';
+ }catch(e){status.textContent='⚠ Falha ao salvar efeitos';}
+}
+async function pollEffects(){
+ if(!remote||effectsReading||action||effectsDirty&&Date.now()-fxLastWrite<2000)return;
+ effectsReading=true;
+ try{
+  const res=await fetch(API+'/rest/v1/app_state?key=eq.battle_effects&select=data',{headers});
+  if(!res.ok)throw Error(res.status);
+  const rows=await res.json(),data=(rows[0]||{}).data||{};
+  if(Array.isArray(data.fog))fog=data.fog.slice(0,COLS*ROWS);
+  if(Array.isArray(data.areas))areas=data.areas.slice(0,30).filter(x=>
+    x&&['area_circle','area_cone','area_line'].includes(x.kind));
+  effectsDirty=false;draw();
+ }catch(e){status.textContent='⚠ Efeitos indisponíveis';}
+ finally{effectsReading=false;}
+}
+function paintFog(p,kind){
+ const loc=cell(p),id=loc.x+','+loc.y,idx=fog.indexOf(id);
+ if(kind==='fog_hide'&&idx===-1)fog.push(id);
+ if(kind==='fog_reveal'&&idx!==-1)fog.splice(idx,1);
+}
 async function saveMapConfig(){
  if(!remote){status.textContent='Enquadramento local';return;}
  try{
@@ -180,23 +251,32 @@ vp.addEventListener('wheel',e=>{e.preventDefault();const p=position(e),w=world(p
 vp.addEventListener('pointerdown',e=>{
  if(e.button!==0)return;
  vp.focus();const p=position(e),w=world(p),target=tokenAt(p);
- if(e.ctrlKey||measure){action={mode:'measure',start:w,end:w};}
+ const tool=OPT.can_edit_effects?fxTool.value:'normal';
+ if(tool==='fog_hide'||tool==='fog_reveal'){
+   action={mode:'fog',kind:tool};paintFog(p,tool);
+ }else if(tool.startsWith('area_')){
+   action={mode:'area',kind:tool,start:w,end:w};
+ }else if(e.ctrlKey||measure){action={mode:'measure',start:w,end:w};}
  else if(target){select(target);const at=cell(p);action={mode:'token',id:instance(target),dx:target.x-at.x,dy:target.y-at.y,measuring:e.shiftKey,start:w,end:w};}
  else{action={mode:'pan',p,ox:offsetX,oy:offsetY};}
  vp.setPointerCapture(e.pointerId);vp.classList.add('drag');draw();
 });
 vp.addEventListener('pointermove',e=>{
  if(!action)return;const p=position(e),w=world(p);
- if(action.mode==='measure')action.end=w;
+ if(action.mode==='measure'||action.mode==='area')action.end=w;
+ if(action.mode==='fog')paintFog(p,action.kind);
  if(action.mode==='pan'){offsetX=action.ox+p.x-action.p.x;offsetY=action.oy+p.y-action.p.y;}
  if(action.mode==='token'){const t=tokens.find(t=>instance(t)===action.id);if(t){const at=cell(p);move(t,at.x+action.dx,at.y+action.dy);action.end=w;}}
  if(action.mode==='map'){config.pan_x=Math.max(-1,Math.min(1,action.panX+(p.x-action.p.x)/(W*scale)*2));config.pan_y=Math.max(-1,Math.min(1,action.panY+(p.y-action.p.y)/(H*scale)*2));}
  draw();
 });
 vp.addEventListener('pointerup',e=>{
- if(!action)return;const mode=action.mode,p=position(e);
+ if(!action)return;const previous=action,mode=action.mode,p=position(e);
  action=null;vp.classList.remove('drag');draw();
  if(mode==='token')save();
+ if(mode==='fog')saveEffects();
+ if(mode==='area'){const w=world(p);const item={kind:previous.kind,start:previous.start,end:w};
+   if(areas.length>=30)areas.shift();areas.push(item);saveEffects();}
  if(mode==='map')saveMapConfig();
 });
 vp.addEventListener('contextmenu',e=>{e.preventDefault();const t=tokenAt(position(e));if(t){tokens=tokens.filter(x=>x!==t);save();}});
@@ -217,6 +297,8 @@ document.getElementById('measure').onclick=()=>{
 };
 document.getElementById('reset').onclick=fit;
 document.getElementById('clear').onclick=()=>{if(confirm('Remover todos os tokens?')){tokens=[];save();}};
-loadCatalog();fit();poll();refreshCatalog();if(remote){setInterval(poll,1300);setInterval(refreshCatalog,2500);}
+clearFx.onclick=()=>{if(confirm('Limpar névoa de guerra e áreas de efeito?')){fog=[];areas=[];saveEffects();fxTool.value='normal';}};
+loadCatalog();fit();poll();pollEffects();refreshCatalog();
+if(remote){setInterval(poll,1300);setInterval(pollEffects,2100);setInterval(refreshCatalog,2500);}
 </script></body></html>"""
     return source.replace("__OPTIONS__", json.dumps(settings, ensure_ascii=False).replace("</", "<\\/"))

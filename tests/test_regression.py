@@ -98,10 +98,10 @@ class TestCoreRules(unittest.TestCase):
         from parry_andrias_asset import DATA_URI as andrias
         from parry_bondobo_asset import DATA_URI as bondobo
         for uri, expected in ((kuro, 96897), (andrias, 85589), (bondobo, 42973)):
-            self.assertTrue(uri.startswith("data:audio/mpeg;base64,"))
+            self.assertTrue(uri.startswith("data:audio/webm;base64,"))
             payload = base64.b64decode(uri.split(",", 1)[1], validate=True)
             self.assertEqual(len(payload), expected)
-            self.assertTrue(payload.startswith(b"ID3") or payload[0] == 0xff)
+            self.assertTrue(payload.startswith(bytes.fromhex("1a45dfa3")))
 
 
     def test_bottom_ratio_and_simple_dice_labels(self):

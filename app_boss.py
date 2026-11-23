@@ -1650,7 +1650,7 @@ def render_boss_editor_form(bosses: dict):
 
         for i in range(1, int(attack_count) + 1):
 
-            if source_boss:
+            if source_boss and i <= len(source_boss.attacks):
                 template = source_boss.attacks[i - 1]
             else:
                 template = default_attack_template(i)

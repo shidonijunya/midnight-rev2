@@ -5,6 +5,7 @@ from dataclasses import dataclass, asdict, field
 from typing import List, Optional
 
 import streamlit as st
+from boss_runtime import hydrate_runtime, persist_runtime
 from shared_backend import load_app_state, save_app_state, shared_enabled, upload_asset
 
 
@@ -2362,12 +2363,9 @@ def render_shared_display_controls(bosses: dict):
         display.update({"mode": mode, "scene_name": scene_name, "show_scene": show_scene, "boss_images": boss_images})
         config["display"] = display
         save_app_state("boss_config", config)
+        st.session_state["_boss_display_changed"] = True
         st.sidebar.success("Configuração da cena salva.")
-    # Publica estado atual do chefe mesmo quando não há upload novo.
-    display.update({"mode": mode, "scene_name": scene_name, "show_scene": show_scene, "boss_images": boss_images})
-    config["display"] = display
-    config["bosses"] = {name: boss_to_dict(boss) for name, boss in bosses.items()}
-    save_app_state("boss_config", config)
+    # Evitar gravações não solicitadas em reruns passivos.
 
 
 def publish_current_boss(bosses: dict):
@@ -2401,6 +2399,7 @@ def main():
 
     bosses = load_bosses()
     init_session_state(bosses)
+    hydrate_runtime(bosses, st.session_state)
 
     render_shared_display_controls(bosses)
     if st.session_state.app_mode == "editor":
@@ -2410,7 +2409,11 @@ def main():
         boss = bosses[st.session_state.selected_boss]
         render_combat_sidebar(bosses, boss)
         render_combat_main(boss)
-    publish_current_boss(bosses)
+    changed = persist_runtime(bosses, st.session_state)
+    if st.session_state.get("_boss_runtime_conflict"):
+        st.error("Outra sessão modificou este combate. Atualize a página antes de tentar salvar novamente.")
+    if changed or st.session_state.pop("_boss_display_changed", False):
+        publish_current_boss(bosses)
 
 
 if __name__ == "__main__":

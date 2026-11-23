@@ -6,7 +6,7 @@ from typing import List, Optional
 
 import streamlit as st
 from boss_runtime import hydrate_runtime, persist_runtime
-from shared_backend import load_app_state, save_app_state, shared_enabled, upload_asset
+from shared_backend import load_app_state, save_app_state, fetch_app_state, compare_and_set_app_state, create_app_state_if_missing, shared_enabled, upload_asset
 
 
 # ============================================================
@@ -22,16 +22,6 @@ st.set_page_config(
 from auth_unified import require_role
 require_role("mestre")
 
-
-
-# ============================================================
-# ARQUIVO DE DADOS
-# ============================================================
-
-DATA_FILE = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)),
-    "GEISONFODA.json"
-)
 
 
 # ============================================================
@@ -852,40 +842,55 @@ def build_default_bosses() -> dict:
 # ============================================================
 
 def load_bosses() -> dict:
-    shared = load_app_state("boss_config", {}) if shared_enabled() else {}
-    raw_shared = shared.get("bosses") if isinstance(shared, dict) else None
-    if raw_shared:
+    """Supabase is authoritative. A failed read can NEVER reset stored bosses."""
+    if not shared_enabled():
+        st.error("A biblioteca de chefes requer o Supabase para preservar os dados.")
+        st.stop()
+    result = fetch_app_state("boss_config")
+    if result["status"] == "error":
+        st.error("Falha de leitura do Supabase. Os chefes permaneceram inalterados.")
+        st.stop()
+    config = result["data"] if result["status"] == "found" else {}
+    raw = config.get("bosses") if isinstance(config, dict) else None
+    if raw:
         try:
-            return {name: dict_to_boss(data) for name, data in raw_shared.items()}
-        except (KeyError, ValueError, TypeError):
-            pass
-    if os.path.exists(DATA_FILE):
-        try:
-            with open(DATA_FILE, "r", encoding="utf-8") as f:
-                raw = json.load(f)
-            bosses = {name: dict_to_boss(data) for name, data in raw.items()}
-            if bosses:
-                return bosses
-        except (json.JSONDecodeError, KeyError, ValueError, TypeError):
-            pass
-    bosses = build_default_bosses()
-    save_bosses(bosses)
-    return bosses
+            return {name: dict_to_boss(data) for name, data in raw.items()}
+        except (KeyError, ValueError, TypeError) as exc:
+            st.error(f"Dados de chefes inválidos; nenhuma configuração será substituída: {exc}")
+            st.stop()
+    defaults = build_default_bosses()
+    fresh = dict(config) if isinstance(config, dict) else {}
+    fresh["bosses"] = {name: boss_to_dict(boss) for name, boss in defaults.items()}
+    if result["status"] == "found":
+        ok = compare_and_set_app_state("boss_config", result["updated_at"], fresh)
+    else:
+        ok = create_app_state_if_missing("boss_config", fresh)
+    if ok:
+        return defaults
+    # Another master may have created the library. Read it, never overwrite it.
+    latest = fetch_app_state("boss_config")
+    if latest["status"] == "found" and (latest["data"] or {}).get("bosses"):
+        return {name: dict_to_boss(data) for name, data in latest["data"]["bosses"].items()}
+    st.error("Não foi possível inicializar a biblioteca sem conflitos. Atualize a página.")
+    st.stop()
 
 
-def save_bosses(bosses: dict) -> None:
+def save_bosses(bosses: dict) -> bool:
+    """Write only intended boss definitions while preserving scene and mob tokens."""
     raw = {name: boss_to_dict(boss) for name, boss in bosses.items()}
-    try:
-        tmp_file = DATA_FILE + ".tmp"
-        with open(tmp_file, "w", encoding="utf-8") as f:
-            json.dump(raw, f, ensure_ascii=False, indent=2)
-        os.replace(tmp_file, DATA_FILE)
-    except OSError:
-        pass
-    if shared_enabled():
-        config = load_app_state("boss_config", {}) or {}
-        config["bosses"] = raw
-        save_app_state("boss_config", config)
+    result = fetch_app_state("boss_config")
+    if result["status"] == "error":
+        st.error("Não foi possível confirmar a versão da biblioteca. Nada foi sobrescrito.")
+        return False
+    config = dict(result["data"] or {})
+    config["bosses"] = raw
+    if result["status"] == "found":
+        ok = compare_and_set_app_state("boss_config", result["updated_at"], config)
+    else:
+        ok = create_app_state_if_missing("boss_config", config)
+    if not ok:
+        st.error("Outra sessão alterou a biblioteca. Atualize antes de salvar.")
+    return ok
 
 
 # ============================================================

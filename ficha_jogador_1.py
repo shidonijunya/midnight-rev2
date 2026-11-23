@@ -18,11 +18,6 @@ from auth_unified import require_role
 require_role("jogador_1", "mestre")
 
 
-DATA_FILE = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)),
-    "ficha_midnightsun_dados.json",
-)
-
 # ============================================================
 # CSS
 # ============================================================

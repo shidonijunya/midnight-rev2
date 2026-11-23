@@ -296,6 +296,24 @@ def patch_character(player_id, changes, attempts=5):
     st.error("Outra sessão alterou a ficha simultaneamente. Tente novamente.")
     return False
 
+def fetch_app_state(key):
+    """Like fetch_character, distinguish not-found from transient failures."""
+    client = get_client()
+    if client is None:
+        return {"status": "error", "data": None, "updated_at": None}
+    try:
+        response = (client.table("app_state").select("data,updated_at")
+                    .eq("key", key).limit(1).execute())
+        rows = response.data or []
+        if not rows:
+            return {"status": "missing", "data": None, "updated_at": None}
+        return {"status": "found", "data": rows[0].get("data") or {},
+                "updated_at": rows[0].get("updated_at")}
+    except Exception as exc:
+        st.error(f"Falha ao carregar estado '{key}': {_safe_error(exc)}")
+        return {"status": "error", "data": None, "updated_at": None}
+
+
 def load_app_state_record(key):
     """Fetch data plus revision marker. None means unavailable or missing."""
     client = get_client()

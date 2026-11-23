@@ -97,6 +97,9 @@ def create_character_if_missing(player_id, data):
     if client is None or not isinstance(data, dict):
         return False
     try:
+        previous = fetch_character(player_id)
+        if previous["status"] not in ("found", "missing"):
+            return False
         client.table("characters").upsert({
             "player_id": player_id,
             "data": data,
@@ -149,6 +152,7 @@ def change_resources_atomic(player_id, deltas, attempts=7):
                       .eq("updated_at", previous["updated_at"])
                       .select("player_id").execute())
             if result.data:
+                _archive_snapshot(player_id, previous.get("data") or {}, "resources")
                 return True, fresh, None
             # Another session wrote in the meantime: re-read and recompute.
         except Exception as exc:
@@ -165,6 +169,78 @@ def auth_configured():
         return False
 
 
+
+def _archive_snapshot(player_id, previous_data, reason="update"):
+    """Best-effort bounded history in existing app_state; no schema changes.
+
+    This is not a substitute for an immutable DB trigger if absolute audit
+    guarantees are required. Each append uses optimistic version checking.
+    """
+    if not isinstance(previous_data, dict) or not previous_data:
+        return False
+    client = get_client()
+    if client is None:
+        return False
+    history_key = "character_history_" + str(player_id)
+    entry = {"saved_at": datetime.now(timezone.utc).isoformat(),
+             "reason": reason, "data": previous_data}
+    for _ in range(6):
+        try:
+            result = (client.table("app_state").select("data,updated_at")
+                      .eq("key", history_key).limit(1).execute())
+            rows = result.data or []
+            if not rows:
+                client.table("app_state").upsert({
+                    "key": history_key,
+                    "data": {"versions": [entry]},
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                }, on_conflict="key", ignore_duplicates=True).execute()
+                # Another writer may have inserted first, re-read to be safe.
+                check = (client.table("app_state").select("data")
+                         .eq("key", history_key).limit(1).execute())
+                versions = ((check.data or [{}])[0].get("data") or {}).get("versions") or []
+                if versions and versions[0].get("saved_at") == entry["saved_at"]:
+                    return True
+                continue
+            row = rows[0]
+            versions = list((row.get("data") or {}).get("versions") or [])
+            versions.insert(0, entry)
+            updated = (client.table("app_state")
+                       .update({"data": {"versions": versions[:30]},
+                                "updated_at": datetime.now(timezone.utc).isoformat()})
+                       .eq("key", history_key)
+                       .eq("updated_at", row["updated_at"])
+                       .select("key").execute())
+            if updated.data:
+                return True
+        except Exception:
+            return False
+    return False
+
+
+def list_character_history(player_id):
+    if auth_configured() and not can_access_character(player_id):
+        return []
+    data = load_app_state("character_history_" + str(player_id), {})
+    return list(data.get("versions", [])) if isinstance(data, dict) else []
+
+
+def restore_character_version(player_id, history_index):
+    """Explicit master-only restoration, conditional on a configured master login."""
+    if not auth_configured() or st.session_state.get("_midnight_role") != "mestre":
+        return False
+    versions = list_character_history(player_id)
+    if not isinstance(history_index, int) or not (0 <= history_index < len(versions)):
+        return False
+    target = versions[history_index].get("data")
+    if not isinstance(target, dict):
+        return False
+    # Existing patch API is CAS-protected. Archive the current row before restore.
+    return patch_character(player_id, target)
+
+
+
+
 def save_character(player_id, data):
     if auth_configured() and not can_access_character(player_id):
         return False
@@ -177,6 +253,8 @@ def save_character(player_id, data):
             "data": data,
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }, on_conflict="player_id").execute()
+        if previous["status"] == "found" and previous["data"] != data:
+            _archive_snapshot(player_id, previous["data"], "full_save")
         return True
     except Exception as exc:
         st.error(f"Falha ao salvar a ficha compartilhada ({player_id}): {_safe_error(exc)}")
@@ -210,6 +288,7 @@ def patch_character(player_id, changes, attempts=5):
                       .eq("updated_at", stored["updated_at"])
                       .select("player_id").execute())
             if result.data:
+                _archive_snapshot(player_id, stored.get("data") or {}, "edit")
                 return True
         except Exception as exc:
             st.error(f"Erro ao atualizar recursos: {_safe_error(exc)}")

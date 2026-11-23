@@ -205,20 +205,6 @@ async function saveEffects(){
   effectsDirty=false;status.textContent='● Efeitos sincronizados';
  }catch(e){status.textContent='⚠ Falha ao salvar efeitos';}
 }
-async function pollEffects(){
- if(!remote||effectsReading||action||effectsDirty&&Date.now()-fxLastWrite<2000)return;
- effectsReading=true;
- try{
-  const res=await fetch(API+'/rest/v1/app_state?key=eq.battle_effects&select=data',{headers});
-  if(!res.ok)throw Error(res.status);
-  const rows=await res.json(),data=(rows[0]||{}).data||{};
-  if(Array.isArray(data.fog))fog=data.fog.slice(0,COLS*ROWS);
-  if(Array.isArray(data.areas))areas=data.areas.slice(0,30).filter(x=>
-    x&&['area_circle','area_cone','area_line'].includes(x.kind));
-  effectsDirty=false;draw();
- }catch(e){status.textContent='⚠ Efeitos indisponíveis';}
- finally{effectsReading=false;}
-}
 function paintFog(p,kind){
  const loc=cell(p),id=loc.x+','+loc.y,idx=fog.indexOf(id);
  if(kind==='fog_hide'&&idx===-1)fog.push(id);
@@ -236,15 +222,30 @@ async function saveMapConfig(){
  }catch(e){status.textContent='⚠ Não foi possível salvar enquadramento';}
 }
 async function poll(){
- if(!remote||reading||action||dirty&&Date.now()-lastWrite<2500)return;
+ if(!remote||reading||action||
+     dirty&&Date.now()-lastWrite<2500||
+     effectsDirty&&Date.now()-fxLastWrite<2500)return;
  reading=true;
  try{
-  const r=await fetch(API+'/rest/v1/app_state?key=eq.battle_grid&select=data',{headers});
+  // One fetch for both tokens and spell/fog overlays.
+  const r=await fetch(API+'/rest/v1/app_state?key=in.(battle_grid,battle_effects)&select=key,data',{headers});
   if(!r.ok)throw Error(r.status);
-  const rows=await r.json();const arr=rows[0]?.data?.tokens;
-  if(Array.isArray(arr)){tokens=arr.filter(t=>Number.isInteger(t.x)&&Number.isInteger(t.y)&&t.x>=0&&t.x<COLS&&t.y>=0&&t.y<ROWS).slice(0,150);draw();}
-  dirty=false;status.textContent='● Sincronizado';
- }catch(e){status.textContent='⚠ Sem conexão';}finally{reading=false;}
+  const rows=await r.json();
+  for(const row of rows){
+   const data=row.data||{};
+   if(row.key==='battle_grid'&&Array.isArray(data.tokens)){
+    tokens=data.tokens.filter(t=>Number.isInteger(t.x)&&Number.isInteger(t.y)&&
+      t.x>=0&&t.x<COLS&&t.y>=0&&t.y<ROWS).slice(0,150);
+   }
+   if(row.key==='battle_effects'){
+    if(Array.isArray(data.fog))fog=data.fog.slice(0,COLS*ROWS);
+    if(Array.isArray(data.areas))areas=data.areas.slice(0,30).filter(x=>
+      x&&['area_circle','area_cone','area_line'].includes(x.kind));
+   }
+  }
+  dirty=false;effectsDirty=false;draw();status.textContent='● Sincronizado';
+ }catch(e){status.textContent='⚠ Sem conexão';}
+ finally{reading=false;}
 }
 vp.addEventListener('wheel',e=>{e.preventDefault();const p=position(e),w=world(p),factor=e.deltaY<0?1.13:1/1.13;
  scale=Math.max(.2,Math.min(5,scale*factor));offsetX=p.x-w.x*scale;offsetY=p.y-w.y*scale;draw();},{passive:false});
@@ -298,7 +299,7 @@ document.getElementById('measure').onclick=()=>{
 document.getElementById('reset').onclick=fit;
 document.getElementById('clear').onclick=()=>{if(confirm('Remover todos os tokens?')){tokens=[];save();}};
 clearFx.onclick=()=>{if(confirm('Limpar névoa de guerra e áreas de efeito?')){fog=[];areas=[];saveEffects();fxTool.value='normal';}};
-loadCatalog();fit();poll();pollEffects();refreshCatalog();
-if(remote){setInterval(poll,1300);setInterval(pollEffects,2100);setInterval(refreshCatalog,2500);}
+loadCatalog();fit();poll();refreshCatalog();
+if(remote){setInterval(poll,1300);setInterval(refreshCatalog,2500);}
 </script></body></html>"""
     return source.replace("__OPTIONS__", json.dumps(settings, ensure_ascii=False).replace("</", "<\\/"))

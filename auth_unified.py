@@ -42,6 +42,16 @@ def resolve_role(password):
     return matches[0] if len(matches) == 1 else None
 
 
+def secure_mode_enabled():
+    """Explicit cutover flag: never silently lock the five legacy app URLs."""
+    import os
+    try:
+        value = st.secrets.get("MIDNIGHT_SECURE_MODE", os.getenv("MIDNIGHT_SECURE_MODE", "false"))
+    except Exception:
+        value = os.getenv("MIDNIGHT_SECURE_MODE", "false")
+    return str(value).lower() in ("1", "true", "yes", "on")
+
+
 def credentials_ready():
     try:
         hashes = st.secrets.get("ACCESS_PASSWORD_HASHES", {})
@@ -72,9 +82,17 @@ def login_gate():
 
 
 def require_role(*allowed):
-    # Backward compatibility: the five previously deployed app URLs continue to
-    # run on their existing Supabase config. Password gate becomes mandatory
-    # as soon as all four credential hashes are installed in that deployment.
+    # Secure cutover must have both four distinct hashes AND server-only DB key.
+    # Without the explicit cutover flag, legacy deployments remain compatible.
+    if secure_mode_enabled():
+        import os
+        try:
+            service = st.secrets.get("SUPABASE_SERVICE_ROLE_KEY", os.getenv("SUPABASE_SERVICE_ROLE_KEY"))
+        except Exception:
+            service = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+        if not credentials_ready() or not service:
+            st.error("Modo seguro incompleto: configure as quatro senhas e a chave privada do servidor.")
+            st.stop()
     if not credentials_ready():
         return None
     role = st.session_state.get("_midnight_role")

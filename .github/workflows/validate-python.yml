@@ -4,6 +4,7 @@ on:
     branches:
       - main
       - feature/unified-midnight-app
+      - feature/approved-24-safe-foundation-2026-11-23
   pull_request:
 jobs:
   syntax:

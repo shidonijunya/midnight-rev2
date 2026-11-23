@@ -292,55 +292,11 @@ XP_TABLE = {
 # FÓRMULAS DO SISTEMA
 # ============================================================
 
-def modificador(valor: int) -> int:
-    """floor((atributo - 10) / 2) — usada para todos os atributos."""
-    return (valor - 10) // 2
-
-
-def bonus_nao_treinado(mod: int) -> int:
-    """Metade do modificador, arredondado para baixo (funciona p/ negativos)."""
-    return mod // 2
-
-
-def bonus_treinado(mod: int) -> int:
-    """
-    Bônus de perícia treinada.
-    Reconstruída a partir da tabela fornecida (mod + bônus não treinado + 1),
-    que reproduz fielmente os valores 0 a 7 informados.
-    """
-    return mod + (mod // 2) + 1
-
-
-def arredondar_para_cima(valor: float) -> int:
-    return math.ceil(round(valor, 6))
-
-
-def calc_hp_max(constituicao: int, fortitude: int):
-    hp_const = 50 + (constituicao - 10) * 6
-    hp_fort = (fortitude - 10) * 2
-    return hp_const + hp_fort, hp_const, hp_fort
-
-
-def calc_mana_max(carisma: int, sabedoria: int, inteligencia: int) -> int:
-    valor = (carisma * 1.7) + (sabedoria * 1.7) + (inteligencia * 2.3)
-    return arredondar_para_cima(valor)
-
-
-def calc_estamina_max(fortitude: int, forca: int, destreza: int) -> int:
-    valor = (fortitude * 4.6) + (forca * 1.2) + (destreza * 1.2)
-    return arredondar_para_cima(valor)
-
-
-def calc_peso_max(fortitude: int, constituicao: int) -> float:
-    valor = (fortitude * 1) + (constituicao * 0.4)
-    return round(valor, 2)
-
-
-def formatar_peso(valor: float) -> str:
-    if float(valor).is_integer():
-        return f"{int(valor)}"
-    texto = f"{valor:.2f}".rstrip("0").rstrip(".")
-    return texto
+from game_rules import (
+    modificador, bonus_nao_treinado, bonus_treinado,
+    arredondar_para_cima, calc_hp_max, calc_mana_max,
+    calc_estamina_max, calc_peso_max, formatar_peso,
+)
 
 
 # ============================================================

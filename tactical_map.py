@@ -5,7 +5,10 @@ from shared_backend import config_value
 
 def map_html(map_config, token_catalog):
     api = str(config_value("SUPABASE_URL") or "").rstrip("/")
-    anon = str(config_value("SUPABASE_ANON_KEY") or "")
+    # Public browser-to-Supabase access is explicitly disabled in secure mode.
+    # A future bidirectional Streamlit component will restore secure multiplayer writes.
+    from auth_unified import secure_mode_enabled
+    anon = "" if secure_mode_enabled() else str(config_value("SUPABASE_ANON_KEY") or "")
     # No service-role key is ever embedded in client-side HTML.
     settings = {"api": api, "anon": anon, "config": map_config or {},
                 "catalog": token_catalog or {}}

@@ -1567,9 +1567,13 @@ def render_delete_confirmation(bosses: dict):
     with col1:
         if st.button("✅ Confirmar exclusão", type="primary", use_container_width=True):
 
-            bosses.pop(target, None)
+            removed = bosses.pop(target, None)
+            if not save_bosses(bosses):
+                if removed is not None:
+                    bosses[target] = removed
+                st.error("Não foi possível confirmar a exclusão. Nenhum boss foi apagado do banco.")
+                st.stop()
             delete_boss_state(target)
-            save_bosses(bosses)
 
             remaining = list(bosses.keys())
             st.session_state.selected_boss = remaining[0] if remaining else None
@@ -1975,7 +1979,9 @@ def render_boss_editor_form(bosses: dict):
             bosses[final_name] = new_boss
             st.session_state.boss_hp[final_name] = int(hp_atual)
 
-        save_bosses(bosses)
+        if not save_bosses(bosses):
+            st.error("Falha ao salvar. Atualize antes de tentar novamente.")
+            st.stop()
 
         st.session_state.selected_boss = final_name
         st.session_state.editor_target = final_name
@@ -2296,7 +2302,9 @@ def render_json_import(bosses: dict):
 
             bosses[new_boss.name] = new_boss
 
-        save_bosses(bosses)
+        if not save_bosses(bosses):
+            st.error("Importação não confirmada no banco; nenhuma alteração será anunciada.")
+            st.stop()
 
         last_imported_name = imported[-1][0].name
         st.session_state.selected_boss = last_imported_name

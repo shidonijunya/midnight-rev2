@@ -311,6 +311,25 @@ def load_app_state_record(key):
         st.error(f"Falha ao carregar estado '{key}': {_safe_error(exc)}")
     return None
 
+def create_app_state_if_missing(key, data):
+    """Idempotent insert without replacing a concurrently created state."""
+    if auth_configured() and st.session_state.get("_midnight_role") != "mestre":
+        return False
+    client = get_client()
+    if client is None:
+        return False
+    try:
+        client.table("app_state").upsert({
+            "key": key, "data": data,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }, on_conflict="key", ignore_duplicates=True).execute()
+        found = load_app_state_record(key)
+        return found is not None and found["data"] == data
+    except Exception as exc:
+        st.error(f"Falha ao inicializar estado '{key}': {_safe_error(exc)}")
+        return False
+
+
 
 def compare_and_set_app_state(key, expected_timestamp, data):
     """Prevents a stale session overwriting a newer shared state revision."""

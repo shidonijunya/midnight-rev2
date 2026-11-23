@@ -3,7 +3,7 @@ import math
 import os
 
 import streamlit as st
-from shared_backend import load_character, save_character, patch_character, shared_enabled, upload_asset
+from shared_backend import load_character, fetch_character, create_character_if_missing, save_character, patch_character, shared_enabled, upload_asset
 
 # ============================================================
 # CONFIGURAÇÃO DA PÁGINA
@@ -538,9 +538,24 @@ def init_session_state():
     for k, v in defaults.items():
         st.session_state.setdefault(k, v)
 
-    loaded = load_character(PLAYER_ID) if shared_enabled() else None
-    if loaded:
-        apply_loaded_data(loaded)
+    loaded = None
+    if shared_enabled():
+        result = fetch_character(PLAYER_ID)
+        if result["status"] in ("error", "forbidden"):
+            st.error("Não foi possível confirmar a ficha no Supabase. Por segurança, nenhuma ficha padrão será gravada.")
+            st.stop()
+        if result["status"] == "missing":
+            # Create only if absent, never upsert defaults over another player's progress.
+            if not create_character_if_missing(PLAYER_ID, defaults):
+                st.error("Não foi possível criar o registro inicial da ficha.")
+                st.stop()
+            result = fetch_character(PLAYER_ID)
+            if result["status"] != "found":
+                st.error("Não foi possível confirmar os dados da ficha recém-criada.")
+                st.stop()
+        loaded = result["data"]
+        if isinstance(loaded, dict):
+            apply_loaded_data(loaded)
 
     # HP / Mana / Estamina atuais começam no máximo, se ainda não definidos
     atributos = {a: st.session_state[attr_key(a)] for a in ATRIBUTOS}
@@ -560,8 +575,6 @@ def init_session_state():
         )
 
     st.session_state["ficha_inicializada"] = True
-    if shared_enabled() and not loaded:
-        save_character(PLAYER_ID, collect_state())
     st.session_state["_last_synced_snapshot"] = collect_state()
 
 

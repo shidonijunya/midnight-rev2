@@ -1,5 +1,8 @@
 """Midnight Sun: single authenticated entry point.
 
+Role numbers map to app entrypoints (Kuro/Andrias/Bondobo), while record IDs
+are rotated in legacy Supabase: 1->2, 2->3, 3->1. Never remap records blindly.
+
 Run: streamlit run app_unificado.py
 """
 import streamlit as st

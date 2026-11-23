@@ -1643,9 +1643,12 @@ def render_boss_editor_form(bosses: dict):
 
     with tab_ataques:
 
-        st.caption("Configure os 10 ataques do boss.")
+        attack_count = st.number_input("Quantidade de ataques", 1, 20,
+            value=len(source_boss.attacks) if source_boss else 10,
+            key=f"{base}_attack_count",
+            help="Pode misturar ataques físicos e de área em qualquer quantidade.")
 
-        for i in range(1, 11):
+        for i in range(1, int(attack_count) + 1):
 
             if source_boss:
                 template = source_boss.attacks[i - 1]
@@ -1865,7 +1868,7 @@ def render_boss_editor_form(bosses: dict):
 
     with tab_matriz:
 
-        st.caption("10 ataques × 5 ações = 50 valores. Verde 10–16, amarelo 17–23, vermelho 24–30.")
+        st.caption(f"{len(attack_values)} ataques × 5 defesas. Verde 10–16, amarelo 17–23, vermelho 24–30.")
 
         header_cols = st.columns([2.2, 1, 1, 1, 1, 1])
         for col, header in zip(header_cols, ["Ataque"] + MATRIX_COLUMNS):
@@ -1998,10 +2001,10 @@ def boss_from_import_json(data: dict) -> Boss:
         raise ValueError("'max_hp' precisa ser maior que zero.")
 
     raw_attacks = data.get("attacks")
-    if not isinstance(raw_attacks, list) or len(raw_attacks) != 10:
+    if not isinstance(raw_attacks, list) or not (1 <= len(raw_attacks) <= 20):
         received = len(raw_attacks) if isinstance(raw_attacks, list) else 0
         raise ValueError(
-            f"'attacks' precisa conter exatamente 10 ataques (recebidos: {received})."
+            f"'attacks' deve conter de 1 a 20 ataques (recebidos: {received})."
         )
 
     attacks = []
@@ -2054,12 +2057,8 @@ def boss_from_import_json(data: dict) -> Boss:
 
         attacks.append(attack)
 
-    physical_count = sum(attack.type == "physical" for attack in attacks)
-    area_count = sum(attack.type == "area" for attack in attacks)
-    if physical_count != 5 or area_count != 5:
-        raise ValueError(
-            "O boss precisa ter exatamente 5 ataques 'physical' e 5 ataques 'area'."
-        )
+    # Os chefes antigos com 5+5 continuam válidos. Novos inimigos podem ter
+    # apenas os ataques necessários, sem exigir pares físicos/em área.
 
     # ---------------- Matriz de reações ----------------
     raw_matrix = data.get("action_matrix") or {}
@@ -2081,8 +2080,8 @@ def boss_from_import_json(data: dict) -> Boss:
         return values
 
     if isinstance(raw_matrix, list):
-        if len(raw_matrix) > 10:
-            raise ValueError("'action_matrix' não pode ter mais de 10 linhas.")
+        if len(raw_matrix) > len(attacks):
+            raise ValueError("'action_matrix' não pode ter mais linhas que ataques.")
         for index, row in enumerate(raw_matrix, start=1):
             matrix[str(index)] = clean_matrix_row(row, index)
     elif isinstance(raw_matrix, dict):

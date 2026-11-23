@@ -1524,6 +1524,25 @@ def render_editor_sidebar(bosses: dict):
                 st.session_state.confirm_delete = True
                 st.rerun()
 
+        if names and not st.session_state.editor_creating:
+            if st.button("📚 Duplicar chefe na biblioteca", use_container_width=True):
+                base_name = st.session_state.editor_target
+                source = bosses[base_name]
+                proposed = f"{base_name} (cópia)"
+                suffix = 2
+                while proposed in bosses:
+                    proposed = f"{base_name} (cópia {suffix})"
+                    suffix += 1
+                cloned = dict_to_boss(boss_to_dict(source))
+                cloned.name = proposed
+                bosses[proposed] = cloned
+                if save_bosses(bosses):
+                    init_boss_state(proposed, cloned.max_hp, cloned.max_hp)
+                    st.session_state.editor_target = proposed
+                    st.session_state.selected_boss = proposed
+                    st.rerun()
+                bosses.pop(proposed, None)
+
         st.divider()
 
         if st.button("↩️ Voltar ao combate", use_container_width=True):

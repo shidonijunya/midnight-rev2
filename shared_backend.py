@@ -59,19 +59,102 @@ def can_access_character(player_id):
     return role == "mestre" or (role in ROLE_SLOT and ROLE_SLOT[role] == player_id)
 
 
-def load_character(player_id):
+def fetch_character(player_id):
+    """Return explicit status so a transient outage cannot look like a new character.
+
+    Result: {"status": "found"|"missing"|"error"|"forbidden", "data": dict|None}.
+    """
     if auth_configured() and not can_access_character(player_id):
-        return None
+        return {"status": "forbidden", "data": None}
     client = get_client()
     if client is None:
-        return None
+        return {"status": "error", "data": None}
     try:
-        response = client.table("characters").select("data").eq("player_id", player_id).limit(1).execute()
-        if response.data:
-            return response.data[0].get("data") or {}
+        result = (client.table("characters").select("data")
+                  .eq("player_id", player_id).limit(1).execute())
+        rows = result.data or []
+        if not rows:
+            return {"status": "missing", "data": None}
+        if not isinstance(rows[0].get("data"), dict):
+            return {"status": "error", "data": None}
+        return {"status": "found", "data": rows[0]["data"]}
     except Exception as exc:
         st.error(f"Falha ao carregar a ficha compartilhada ({player_id}): {_safe_error(exc)}")
-    return None
+        return {"status": "error", "data": None}
+
+
+def load_character(player_id):
+    """Backwards-compatible reader; use fetch_character for safe initialization."""
+    result = fetch_character(player_id)
+    return result["data"] if result["status"] == "found" else None
+
+
+def create_character_if_missing(player_id, data):
+    """Create once; never UPSERT a default sheet over an existing one."""
+    if auth_configured() and not can_access_character(player_id):
+        return False
+    client = get_client()
+    if client is None or not isinstance(data, dict):
+        return False
+    try:
+        client.table("characters").upsert({
+            "player_id": player_id,
+            "data": data,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }, on_conflict="player_id", ignore_duplicates=True).execute()
+        return True
+    except Exception as exc:
+        st.error(f"Falha ao criar ficha inexistente ({player_id}): {_safe_error(exc)}")
+        return False
+
+
+def change_resources_atomic(player_id, deltas, attempts=7):
+    """Compare-and-swap *and recompute* on every retry.
+
+    Never use a previously calculated remaining HP/mana/stamina as a patch.
+    If an RPC is installed this can be moved to a single PostgreSQL function,
+    but CAS protects concurrent edits from the existing apps today.
+    Returns (success, fresh_data, human_error).
+    """
+    allowed = {"hp_atual", "mana_atual", "estamina_atual"}
+    if not isinstance(deltas, dict) or not deltas or set(deltas) - allowed:
+        return False, None, "Recursos inválidos."
+    try:
+        values = {key: int(delta) for key, delta in deltas.items()}
+    except (TypeError, ValueError):
+        return False, None, "Variação inválida."
+    if auth_configured() and not can_access_character(player_id):
+        return False, None, "Sem permissão para alterar esta ficha."
+    client = get_client()
+    if client is None:
+        return False, None, "Supabase indisponível."
+    for _ in range(attempts):
+        try:
+            response = (client.table("characters").select("data,updated_at")
+                        .eq("player_id", player_id).limit(1).execute())
+            rows = response.data or []
+            if not rows:
+                return False, None, "Ficha não encontrada."
+            previous = rows[0]
+            fresh = dict(previous.get("data") or {})
+            for key, delta in values.items():
+                remaining = int(fresh.get(key) or 0) + delta
+                if remaining < 0:
+                    return False, fresh, f"{key.replace('_atual','')} insuficiente."
+                fresh[key] = remaining
+            stamped = datetime.now(timezone.utc).isoformat()
+            result = (client.table("characters")
+                      .update({"data": fresh, "updated_at": stamped})
+                      .eq("player_id", player_id)
+                      .eq("updated_at", previous["updated_at"])
+                      .select("player_id").execute())
+            if result.data:
+                return True, fresh, None
+            # Another session wrote in the meantime: re-read and recompute.
+        except Exception as exc:
+            st.error(f"Falha na atualização dos recursos: {_safe_error(exc)}")
+            return False, None, "Erro ao gravar recursos."
+    return False, None, "Conflito simultâneo; tente novamente."
 
 
 def auth_configured():
@@ -115,10 +198,8 @@ def patch_character(player_id, changes, attempts=5):
                         .eq("player_id", player_id).limit(1).execute())
             rows = response.data or []
             if not rows:
-                initial = {"player_id": player_id, "data": dict(changes),
-                           "updated_at": datetime.now(timezone.utc).isoformat()}
-                client.table("characters").upsert(initial, on_conflict="player_id").execute()
-                return True
+                # A missing row must not be recreated from a partial resource update.
+                return False
             stored = rows[0]
             merged = dict(stored.get("data") or {})
             merged.update(changes)
@@ -135,6 +216,39 @@ def patch_character(player_id, changes, attempts=5):
             return False
     st.error("Outra sessão alterou a ficha simultaneamente. Tente novamente.")
     return False
+
+def load_app_state_record(key):
+    """Fetch data plus revision marker. None means unavailable or missing."""
+    client = get_client()
+    if client is None:
+        return None
+    try:
+        response = (client.table("app_state").select("data,updated_at")
+                    .eq("key", key).limit(1).execute())
+        rows = response.data or []
+        if rows:
+            return {"data": rows[0].get("data") or {}, "updated_at": rows[0].get("updated_at")}
+    except Exception as exc:
+        st.error(f"Falha ao carregar estado '{key}': {_safe_error(exc)}")
+    return None
+
+
+def compare_and_set_app_state(key, expected_timestamp, data):
+    """Prevents a stale session overwriting a newer shared state revision."""
+    if auth_configured() and st.session_state.get("_midnight_role") != "mestre":
+        return False
+    client = get_client()
+    if client is None or not expected_timestamp:
+        return False
+    try:
+        result = (client.table("app_state")
+                  .update({"data": data, "updated_at": datetime.now(timezone.utc).isoformat()})
+                  .eq("key", key).eq("updated_at", expected_timestamp)
+                  .select("key").execute())
+        return bool(result.data)
+    except Exception as exc:
+        st.error(f"Falha ao gravar estado '{key}': {_safe_error(exc)}")
+        return False
 
 
 def load_app_state(key, default=None):

@@ -19,17 +19,14 @@ class TestCoreRules(unittest.TestCase):
         return scope[function]
 
     def test_attribute_modifier_sheet_and_panel(self):
-        for name, fun in (
-            ("ficha_jogador_1.py", "modificador"),
-            ("ficha_jogador_2.py", "modificador"),
-            ("ficha_jogador_3.py", "modificador"),
-            ("painel_geral.py", "attr_mod"),
-        ):
-            func = self.isolated_function(name, fun)
-            self.assertEqual(func(10), 0)
-            self.assertEqual(func(19), 4)
-            self.assertEqual(func(20), 5, name)
-            self.assertEqual(func(21), 5)
+        from game_rules import modificador
+        panel = self.isolated_function("painel_geral.py", "attr_mod")
+        for value, expected in ((10, 0), (19, 4), (20, 5), (21, 5)):
+            self.assertEqual(modificador(value), expected)
+            self.assertEqual(panel(value), expected)
+        for i in (1, 2, 3):
+            source = (ROOT / f"ficha_jogador_{i}.py").read_text(encoding="utf-8")
+            self.assertIn("from game_rules import", source)
 
     def test_uploaded_token_is_persisted_by_all_sheets(self):
         for i, name in enumerate(("Kuro", "Andrias", "Bondobo"), 1):

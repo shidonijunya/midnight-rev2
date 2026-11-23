@@ -35,7 +35,7 @@ def get_client():
     # Service-role access is opt-in and kept exclusively on the Python server.
     from auth_unified import secure_mode_enabled
     key = (config_value("SUPABASE_SERVICE_ROLE_KEY") if secure_mode_enabled()
-           else config_value("SUPABASE_SERVICE_ROLE_KEY") or config_value("SUPABASE_ANON_KEY"))
+           else config_value("SUPABASE_ANON_KEY") or config_value("SUPABASE_SERVICE_ROLE_KEY"))
     if not url or not key:
         return None
     try:

@@ -901,6 +901,45 @@ def render_combat_main(bosses: dict):
         state.pop("encounter_history_turn", None)
     boss = bosses[selected]
     name = boss.name
+    with st.popover("🖼️ Retrato do chefe"):
+        with st.form(f"portrait_form_{name}"):
+            picture = st.file_uploader(f"Imagem de {name}", type=["png", "jpg", "jpeg", "webp"],
+                                       key=f"portrait_file_{name}")
+            submit = st.form_submit_button("Publicar retrato")
+        if submit and picture is None:
+            st.info("Escolha uma imagem para publicar.")
+        elif submit:
+            from uuid import uuid4
+            from io import BytesIO
+            from PIL import Image
+            raw = picture.getvalue()
+            try:
+                with Image.open(BytesIO(raw)) as image:
+                    fmt = image.format
+                    if fmt not in ("PNG", "JPEG", "WEBP"):
+                        raise ValueError("Use PNG, JPEG ou WebP.")
+                    image.verify()
+            except (ValueError, OSError, Image.DecompressionBombError):
+                st.error("Imagem inválida. Escolha um PNG, JPEG ou WebP.")
+            else:
+                record = fetch_app_state("boss_config")
+                if record["status"] == "found":
+                    config = dict(record["data"])
+                    display = dict(config.get("display") or {})
+                    url = upload_asset(f"bosses/portraits/{uuid4().hex}.{fmt.lower()}", raw, Image.MIME[fmt])
+                    if url:
+                        display["boss_images"] = {**(display.get("boss_images") or {}), name: url}
+                        config["display"] = display
+                        if compare_and_set_app_state("boss_config", record["updated_at"], config):
+                            state["_boss_display_changed"] = True
+                            st.success(f"Retrato de {name} salvo.")
+                        else:
+                            st.error("A biblioteca mudou. Publique o retrato novamente.")
+                    else:
+                        st.error("Falha ao enviar o retrato.")
+                else:
+                    st.error("Não foi possível ler a biblioteca de chefes.")
+
     overview, battle = st.columns([1, 1.8], gap="medium")
     with overview, st.container(border=True, key="boss-overview"):
         hp_key = f"combat_hp_{name}"

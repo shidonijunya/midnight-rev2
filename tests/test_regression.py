@@ -96,9 +96,14 @@ class TestCoreRules(unittest.TestCase):
         self.assertIn('"jogador_3": ANDRIAS_PARRY_AUDIO', panel)
         self.assertNotIn("def parry_sound_settings()", panel)
         self.assertIn('SPEC.sound_kind === "parry"', stage)
-        self.assertIn('new Audio(SPEC.sound_url)', stage)
-        self.assertIn('playDefaultDiceSound()', stage)
-        self.assertIn('ctx.resume().then(scheduleRattle)', stage)
+        self.assertIn('if (!enabled || SPEC.idle) return;', stage)
+        self.assertIn('setSound(!enabled)', stage)
+        from dice3d import DICE_AUDIO
+        import base64
+        import hashlib
+        payload = base64.b64decode(DICE_AUDIO.split(",", 1)[1], validate=True)
+        self.assertEqual(hashlib.sha1(b"blob 55725\\0".replace(b"\\0", bytes([0])) + payload).hexdigest(),
+                         "291be937c79ab27e746d157adc090f75970ce580")
 
     def test_bundled_audio_is_decodable_without_upload(self):
         import base64

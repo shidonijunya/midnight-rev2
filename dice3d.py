@@ -9,6 +9,12 @@ Uso:
     html = stage_html(spec, height=250)
 """
 import json
+from base64 import b64encode
+from pathlib import Path
+
+DICE_AUDIO = 'data:audio/mpeg;base64,' + b64encode(
+    (Path(__file__).with_name('audio') / 'dice_roll.mp3').read_bytes()
+).decode('ascii')
 
 THREE_URL = "https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"
 MAX_DICE_3D = 12  # limite visual (meshes); a soma sempre usa todos os dados
@@ -90,89 +96,50 @@ var hudFoot = document.getElementById("foot");
 var hudNote = document.getElementById("note");
 var fallback = document.getElementById("fallback");
 var soundButton = document.getElementById("soundbtn");
-var currentClip = null;
-var normalContext = null;
+var soundKey = "midnight_dice_sound_enabled";
+var host = window;
+try { if (window.parent.document) host = window.parent; } catch (_) {}
+var audio = host.midnightDiceAudio || (host.midnightDiceAudio = new host.Audio());
+var enabled = host.midnightDiceEnabled === true;
+try { enabled = localStorage.getItem(soundKey) === "1"; } catch (_) {}
 
-function markAudioBlocked() {
-  if (soundButton) {
-    soundButton.title = "Navegador bloqueou o áudio automático. Clique aqui para ouvir.";
-    soundButton.style.borderColor = "#d29a46";
-  }
+function setSound(on) {
+  enabled = on;
+  host.midnightDiceEnabled = on;
+  if (!on) audio.pause();
+  soundButton.setAttribute("aria-pressed", String(on));
+  soundButton.title = on ? "Desativar som das rolagens" : "Ativar som das rolagens";
+  soundButton.setAttribute("aria-label", soundButton.title);
 }
-
-function playDefaultDiceSound() {
-  try {
-    var AudioContextCtor = window.AudioContext || window.webkitAudioContext;
-    if (!AudioContextCtor) return;
-    var ctx = normalContext || new AudioContextCtor();
-    normalContext = ctx;
-    function scheduleRattle() {
-      if (ctx.state !== "running") { markAudioBlocked(); return; }
-      for (var i = 0; i < 7; i++) {
-        var t = ctx.currentTime + i * 0.085;
-        var oscillator = ctx.createOscillator(), gain = ctx.createGain();
-        oscillator.type = "triangle";
-        oscillator.frequency.setValueAtTime(130 + Math.random() * 160, t);
-        gain.gain.setValueAtTime(0.0001, t);
-        gain.gain.exponentialRampToValueAtTime(0.07, t + 0.008);
-        gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.075);
-        oscillator.connect(gain); gain.connect(ctx.destination);
-        oscillator.start(t); oscillator.stop(t + 0.08);
-      }
-    }
-    if (ctx.state === "suspended") {
-      // Previously returned silently; resume asynchronously when the browser permits it.
-      ctx.resume().then(scheduleRattle).catch(markAudioBlocked);
-    } else {
-      scheduleRattle();
-    }
-  } catch (err) {
-    markAudioBlocked();
+setSound(enabled);
+window.addEventListener("storage", function(event) {
+  if (event.key === soundKey) setSound(event.newValue === "1");
+});
+soundButton.addEventListener("click", function() {
+  setSound(!enabled);
+  try { localStorage.setItem(soundKey, enabled ? "1" : "0"); } catch (_) {}
+  if (enabled) {
+    // Unlock this same player during the gesture, using one silent PCM sample.
+    audio.src = "data:audio/wav;base64,UklGRiYAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQIAAAAAAA==";
+    audio.play().catch(function(){});
   }
-}
-
+});
 function rollSound() {
-  if (SPEC.idle) return;
-  if (SPEC.sound_kind === "parry" && SPEC.sound_url) {
-    try {
-      if (currentClip) { currentClip.pause(); currentClip.currentTime = 0; }
-      currentClip = new Audio(SPEC.sound_url);
-      currentClip.volume = 0.90;
-      var started = currentClip.play();
-      if (started && typeof started.catch === "function") {
-        started.catch(function () {
-          markAudioBlocked();
-          // Only a failed or unavailable special effect falls back to dice sound.
-          // The user can retry the supplied parry clip by clicking the existing speaker icon.
-        });
-      }
-      return;
-    } catch (err) {
-      playDefaultDiceSound();
-      return;
-    }
-  }
-  // Every other action (attack, defense, skills, free rolls, Bondobo parry) keeps this sound.
-  playDefaultDiceSound();
+  if (!enabled || SPEC.idle) return;
+  audio.src = SPEC.sound_kind === "parry" ? SPEC.sound_url : SPEC.default_sound_url;
+  audio.volume = 0.90;
+  audio.play().catch(function() {});
 }
+  var played = false;
+  try {
+    var k2 = "ms_rolled_" + SPEC.id;
+    played = !!window.sessionStorage.getItem(k2);
+    window.sessionStorage.setItem(k2, "1");
+  } catch (e) { played = false; }
+  if (SPEC.idle) played = true;
 
-if (soundButton) {
-  soundButton.addEventListener("click", function() {
-    if (SPEC.idle) {
-      // A user click unlocks audio permission without a separate settings menu.
-      try {
-        var AudioContextCtor = window.AudioContext || window.webkitAudioContext;
-        if (AudioContextCtor) {
-          var ctx = new AudioContextCtor();
-          Promise.resolve(ctx.resume()).then(function(){ctx.close();});
-          soundButton.title = "Áudio habilitado";
-        }
-      } catch (err) { markAudioBlocked(); }
-    } else {
-      rollSound();
-    }
-  });
-}
+
+if (!played) rollSound();
 
 /* ---------- utilidades de geometria (testáveis em Node) ---------- */
 function flatten(geo) {
@@ -405,19 +372,11 @@ function start() {
   fit();
   window.addEventListener("resize", fit);
 
-  var played = false;
-  try {
-    var k2 = "ms_rolled_" + SPEC.id;
-    played = !!window.sessionStorage.getItem(k2);
-    window.sessionStorage.setItem(k2, "1");
-  } catch (e) { played = false; }
-  if (SPEC.idle) played = true;
-
   renderHud();
   var DURATION = 1500, t0 = performance.now();
   var revealed = false;
   function reveal() { if (!revealed) { revealed = true; hudFoot.style.opacity = 1; } }
-  if (played) reveal(); else { hudFoot.style.opacity = 0; if (!SPEC.idle) rollSound(); }
+  if (played) reveal(); else { hudFoot.style.opacity = 0;  }
 
   var tmp = new THREE.Quaternion();
   function frame(now) {
@@ -465,7 +424,7 @@ html,body{margin:0;padding:0;background:transparent;font-family:Inter,Segoe UI,A
 #fallback{display:none;min-height:__MINH__px;align-items:center;justify-content:center;text-align:center;padding:16px;color:#e0a02f;font-size:13px}
 </style></head>
 <body><div id="wrap" style="height:__HEIGHT__px">
-<div id="cap"></div><div id="note"></div><button id="soundbtn" title="Reproduzir som dos dados">🔊</button>
+<div id="cap"></div><div id="note"></div><button id="soundbtn" title="Ativar som das rolagens">🔊</button>
 <div id="stage" style="height:__HEIGHT__px"></div>
 <div id="fallback"></div>
 <div id="foot"></div>
@@ -477,7 +436,7 @@ html,body{margin:0;padding:0;background:transparent;font-family:Inter,Segoe UI,A
 
 def stage_html(spec, height=250):
     height = int(height)
-    js = JS.replace("__SPEC__", _json_for_script(spec)).replace("__HEIGHT__", str(height - 4))
+    js = JS.replace("__SPEC__", _json_for_script(dict(spec, default_sound_url=DICE_AUDIO))).replace("__HEIGHT__", str(height - 4))
     return (HTML.replace("__THREE__", THREE_URL)
                 .replace("__MINH__", str(height - 90))
                 .replace("__HEIGHT__", str(height - 4))

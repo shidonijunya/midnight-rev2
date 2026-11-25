@@ -244,7 +244,7 @@ def _archive_snapshot(player_id, previous_data, reason="update"):
                                 "updated_at": datetime.now(timezone.utc).isoformat()})
                        .eq("key", history_key)
                        .eq("updated_at", row["updated_at"])
-                       .select("key").execute())
+                       .execute())
             if updated.data:
                 return True
         except Exception:

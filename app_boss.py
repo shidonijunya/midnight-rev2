@@ -1,12 +1,16 @@
 import json
-import os
 import random
+from datetime import datetime, timezone
+from html import escape
 from dataclasses import dataclass, asdict, field
 from typing import List, Optional
 
 import streamlit as st
 from boss_runtime import hydrate_runtime, persist_runtime
-from shared_backend import load_app_state, save_app_state, fetch_app_state, compare_and_set_app_state, create_app_state_if_missing, shared_enabled, upload_asset
+from shared_backend import (
+    compare_and_set_app_state, create_app_state_if_missing, fetch_app_state,
+    shared_enabled, upload_asset,
+)
 
 
 # ============================================================
@@ -17,7 +21,7 @@ st.set_page_config(
     page_title="Simulador de Chefe RPG",
     page_icon="⚔️",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
 from auth_unified import require_role
 require_role("mestre")
@@ -30,236 +34,30 @@ require_role("mestre")
 
 st.markdown("""
 <style>
-
-.block-container {
-    padding-top: 2rem;
-    padding-bottom: 3rem;
-    max-width: 1200px;
+.block-container {max-width: 1340px; padding-top: 3.25rem; padding-bottom: 2rem;}
+[data-testid="stVerticalBlock"] {gap: .7rem;}
+.st-key-boss-overview, .st-key-boss-actions {background: rgba(122,130,155,.07);}
+.st-key-boss-overview [data-testid="stProgress"] [role="progressbar"] > div {
+    background-color: #b34854;
 }
-
-.main-title {
-    text-align: center;
-    font-size: 2.5rem;
-    font-weight: 800;
-    margin-bottom: 0.2rem;
-}
-
-.subtitle {
-    text-align: center;
-    color: #999;
-    margin-bottom: 1.5rem;
-}
-
-.hp-container {
-    border: 1px solid #333;
-    border-radius: 14px;
-    padding: 18px 25px 22px 25px;
-    margin: 10px auto 20px auto;
-    max-width: 700px;
-    background: rgba(255,255,255,0.025);
-}
-
-.hp-title {
-    text-align: center;
-    font-size: 1.1rem;
-    font-weight: 800;
-    letter-spacing: 2px;
-    text-transform: uppercase;
-    color: #ddd;
-    margin-bottom: 8px;
-}
-
-.hp-value {
-    text-align: center;
-    font-size: 2.2rem;
-    font-weight: 800;
-    margin-bottom: 10px;
-}
-
-.hp-bar-background {
-    width: 100%;
-    height: 25px;
-    background: #262626;
-    border-radius: 15px;
-    overflow: hidden;
-    border: 1px solid #444;
-}
-
-.hp-bar-fill {
-    height: 100%;
-    background: #d32f2f;
-    border-radius: 15px;
-    transition: width 0.3s ease;
-}
-
-.attack-card {
-    border: 1px solid #333;
-    border-radius: 12px;
-    padding: 15px 20px;
-    margin: 10px 0;
-    background: rgba(255,255,255,0.025);
-}
-
-.attack-title {
-    font-size: 1.35rem;
-    font-weight: 700;
-    margin-bottom: 2px;
-}
-
-.attack-type {
-    font-size: 0.75rem;
-    color: #999;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-}
-
-.red-stat {
-    border: 2px solid #c62828;
-    border-radius: 10px;
-    padding: 10px 8px 12px 8px;
-    text-align: center;
-    background: rgba(180, 20, 20, 0.08);
-    height: 100%;
-    box-sizing: border-box;
-}
-
-.red-stat-label {
-    color: #ff5252;
-    font-family: Georgia, "Times New Roman", serif;
-    font-size: 0.85rem;
-    font-weight: 700;
-    letter-spacing: 1px;
-    text-transform: uppercase;
-}
-
-.red-stat-value {
-    color: #ff5252;
-    font-family: Georgia, "Times New Roman", serif;
-    font-size: 2rem;
-    font-weight: 800;
-    margin-top: 2px;
-}
-
-.critical {
-    border: 2px solid #ff4b4b;
-    border-radius: 10px;
-    padding: 10px 15px;
-    margin: 10px 0;
-    text-align: center;
-    font-size: 1.15rem;
-    font-weight: 800;
-    background: rgba(255, 75, 75, 0.08);
-    color: #ff5252;
-}
-
-.combo-card {
-    border: 1px solid #333;
-    border-radius: 10px;
-    padding: 12px 16px;
-    margin: 5px 0;
-    background: rgba(255,255,255,0.02);
-    text-align: center;
-}
-
-.table-title {
-    text-align: center;
-    font-size: 1.5rem;
-    font-weight: 800;
-    margin-bottom: 5px;
-}
-
-.table-subtitle {
-    text-align: center;
-    color: #999;
-    margin-bottom: 15px;
-}
-
-.matrix-header {
-    font-weight: 800;
-    text-align: center;
-    padding: 8px 3px;
-    border-bottom: 2px solid #555;
-    font-size: 0.85rem;
-}
-
-.matrix-attack {
-    font-weight: 700;
-    padding: 8px 5px;
-    border-bottom: 1px solid #333;
-    font-size: 0.82rem;
-}
-
-.matrix-value {
-    text-align: center;
-    font-weight: 800;
-    padding: 8px 3px;
-    border-bottom: 1px solid #333;
-    font-size: 1rem;
-}
-
-.matrix-green { color: #4caf50; }
-.matrix-yellow { color: #ffc107; }
-.matrix-red { color: #ff5252; }
-
-.status-box {
-    border: 1px solid #555;
-    border-radius: 8px;
-    padding: 7px 10px;
-    margin: 5px 0;
-    background: rgba(255,255,255,0.03);
-    text-align: center;
-    font-weight: 700;
-}
-
-.manual-result {
-    border: 1px solid #555;
-    border-radius: 10px;
-    padding: 12px;
-    margin-top: 10px;
-    background: rgba(255,255,255,0.025);
-}
-
-.editor-title {
-    font-size: 1.6rem;
-    font-weight: 800;
-    margin-top: 15px;
-    margin-bottom: 10px;
-}
-
-.phase-badge {
-    text-align: center;
-    font-size: 0.95rem;
-    font-weight: 800;
-    letter-spacing: 2px;
-    text-transform: uppercase;
-    padding: 4px 14px;
-    border-radius: 20px;
-    display: inline-block;
-    margin: 2px auto 12px auto;
-}
-
-.phase-badge-wrap {
-    text-align: center;
-}
-
-.phase-1 {
-    color: #4caf50;
-    border: 1px solid #4caf50;
-    background: rgba(76, 175, 80, 0.08);
-}
-
-.phase-2 {
-    color: #ffc107;
-    border: 1px solid #ffc107;
-    background: rgba(255, 193, 7, 0.08);
-}
-
-.phase-3 {
-    color: #ff5252;
-    border: 1px solid #ff5252;
-    background: rgba(255, 82, 82, 0.08);
-}
-
+.boss-result {border-bottom:1px solid rgba(150,155,175,.25); padding:.7rem 0;}
+.boss-result:first-child {padding-top:0;}
+.boss-result:last-child {border:0;}
+.boss-result h4 {margin:0 0 .4rem; font-size:1rem; padding:0;}
+.boss-result .attack-kind {font-size:.76rem; font-weight:500; opacity:.75; margin-left:.45rem;}
+.boss-result .critical {color:#ee9099; font-weight:700;}
+.boss-result dl {display:grid; grid-template-columns:repeat(auto-fit,minmax(104px,1fr)); gap:.35rem 1rem; margin:0;}
+.boss-result dt {font-size:.78rem; opacity:.8; overflow-wrap:anywhere;}
+.boss-result dd {margin:0; font-size:1.25rem; font-weight:700; font-variant-numeric:tabular-nums;}
+.boss-result .roll-detail {font-size:.79rem; opacity:.8; margin:.25rem 0 0;}
+.boss-matrix {overflow-x:auto;}
+.boss-matrix table {width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums;}
+.boss-matrix th, .boss-matrix td {padding:.55rem .7rem; border-bottom:1px solid rgba(150,155,175,.25);}
+.boss-matrix td {text-align:center; font-weight:650;}
+.boss-matrix th[scope="row"] {text-align:left; font-weight:500;}
+.matrix-green {background:rgba(78,153,113,.15);}
+.matrix-yellow {background:rgba(196,155,63,.16);}
+.matrix-red {background:rgba(190,71,82,.18);}
 </style>
 """, unsafe_allow_html=True)
 
@@ -1001,455 +799,185 @@ def new_turn(boss: Boss):
     st.session_state.histories[boss.name].insert(0, turn_data)
 
 
-def roll_specific_attack(boss: Boss, attack_name: str):
-
-    attack = next(a for a in boss.attacks if a.name == attack_name)
-    result = attack.execute()
-
-    st.session_state.manual_result = {
-        "attack": attack,
-        "result": result
-    }
-
-
 def matrix_color(value):
     if value <= 16:
         return "matrix-green"
-    elif value <= 23:
+    if value <= 23:
         return "matrix-yellow"
-    else:
-        return "matrix-red"
+    return "matrix-red"
 
 
-# ============================================================
-# RENDER: RESULTADO DE UM ATAQUE (usado no ataque manual e no turno)
-# ============================================================
-
-def render_attack_result(attack: Attack, result: dict):
-
-    c1, c2, c3 = st.columns(3)
-
-    with c1:
-        st.metric("D20", result["natural_roll"])
-
-    with c2:
-        st.metric("Bônus", f"+{attack.attack_bonus}")
-
-    with c3:
-        st.markdown(
-            f"""
-            <div class="red-stat">
-                <div class="red-stat-label">Total</div>
-                <div class="red-stat-value">{result["attack_result"]}</div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-
-    if result["is_critical"]:
-        st.markdown(
-            f"""
-            <div class="critical">
-                💥 CRÍTICO! &nbsp;&nbsp; ×{attack.crit_multiplier}
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-
-    st.markdown("**💀 Dano**")
-
-    damage_col, final_col = st.columns(2)
-
-    with damage_col:
-        dados = f"{attack.damage_dice_count}d{attack.damage_dice_sides} + {attack.damage_bonus}"
-        st.write(f"`{dados}` → rolagem: **{result['damage_result']}**")
-
-    with final_col:
-        st.markdown(
-            f"""
-            <div class="red-stat">
-                <div class="red-stat-label">Dano Final</div>
-                <div class="red-stat-value">{result["final_damage"]}</div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-
-    effect_col, effect_value_col = st.columns(2)
-
-    with effect_col:
-        st.markdown(f"**☠️ {attack.effect_name}**")
-
-        if attack.type == "physical":
-            if attack.effect_dice_count:
-                st.write(f"`{attack.effect_dice_count}d{attack.effect_dice_sides}`")
-            else:
-                st.write("Nenhum efeito")
-        else:
-            st.write("Metade do dano final")
-
-    with effect_value_col:
-        st.markdown(
-            f"""
-            <div class="red-stat">
-                <div class="red-stat-label">Efeito</div>
-                <div class="red-stat-value">{result["effect_value"]}</div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-
-
-# ============================================================
-# RENDER: MODO COMBATE
-# ============================================================
-
-def render_combat_sidebar(bosses: dict, boss: Boss):
-
-    with st.sidebar:
-
-        st.header("⚙️ Controle do Chefe")
-
-        names = list(bosses.keys())
-        selected = st.selectbox(
-            "👹 Boss atual",
-            names,
-            index=names.index(st.session_state.selected_boss)
-        )
-
-        if selected != st.session_state.selected_boss:
-            st.session_state.selected_boss = selected
-            st.session_state.manual_result = None
-            st.rerun()
-
-        st.divider()
-
-        st.subheader("🎯 Ataque específico")
-
-        attack_names = [a.name for a in boss.attacks]
-
-        st.selectbox(
-            "Escolha o ataque",
-            attack_names,
-            key=f"selected_attack_{boss.name}"
-        )
-
-        if st.button("🎲 ROLAR ATAQUE", use_container_width=True):
-            chosen_attack = st.session_state[f"selected_attack_{boss.name}"]
-            roll_specific_attack(boss, chosen_attack)
-            st.rerun()
-
-        st.divider()
-
-        st.subheader("☠️ Status do chefe")
-
-        status_to_add = st.selectbox("Adicionar condição", STATUS_OPTIONS)
-
-        if st.button("➕ Adicionar status", use_container_width=True):
-            if status_to_add not in st.session_state.statuses[boss.name]:
-                st.session_state.statuses[boss.name].append(status_to_add)
-                st.rerun()
-
-        if st.session_state.statuses[boss.name]:
-            st.caption("Status ativos:")
-            for status in list(st.session_state.statuses[boss.name]):
-                col1, col2 = st.columns([4, 1])
-                with col1:
-                    st.write(f"☠️ {status}")
-                with col2:
-                    if st.button("✕", key=f"remove_{boss.name}_{status}"):
-                        st.session_state.statuses[boss.name].remove(status)
-                        st.rerun()
-        else:
-            st.caption("Nenhum status ativo.")
-
-        st.divider()
-
-        st.subheader("🎯 Regras do combo")
-        st.write("**60%**"); st.caption("3 ataques físicos")
-        st.write("**20%**"); st.caption("2 físicos + 1 área")
-        st.write("**10%**"); st.caption("1 físico + 1 área")
-        st.write("**10%**"); st.caption("2 ataques em área")
-
-        st.divider()
-
-        current_phase = boss.get_current_phase(st.session_state.boss_hp[boss.name])
-
-        st.subheader("🗡️ Ataques físicos")
-        for attack in boss.get_physical_attacks():
-            unlocked = attack.id in current_phase.physical_ids
-            icon = "✅" if unlocked else "🔒"
-            st.write(f"{icon} **{attack.id}.** {attack.name}")
-
-        st.divider()
-
-        st.subheader("🔥 Ataques em área")
-        for attack in boss.get_area_attacks():
-            unlocked = attack.id in current_phase.area_ids
-            icon = "✅" if unlocked else "🔒"
-            st.write(f"{icon} **{attack.id}.** {attack.name}")
-
-        st.divider()
-
-        st.write(f"**Turnos realizados:** {st.session_state.turn_numbers[boss.name]}")
-
-        if st.button("🔄 Resetar chefe", use_container_width=True):
-            st.session_state.boss_hp[boss.name] = boss.max_hp
-            st.session_state.turn_numbers[boss.name] = 0
-            st.session_state.histories[boss.name] = []
-            st.session_state.current_turns[boss.name] = None
-            st.session_state.statuses[boss.name] = []
-            st.session_state.manual_result = None
-            st.rerun()
-
-        if st.button("🗑️ Limpar histórico", use_container_width=True):
-            st.session_state.histories[boss.name] = []
-            st.session_state.current_turns[boss.name] = None
-            st.session_state.turn_numbers[boss.name] = 0
-            st.rerun()
-
-        st.divider()
-
-        if st.button("⚙️ Editor de Bosses", use_container_width=True):
-            st.session_state.app_mode = "editor"
-            st.session_state.editor_target = st.session_state.selected_boss
-            st.session_state.editor_creating = False
-            st.rerun()
-
-
-def render_combat_main(boss: Boss):
-
-    st.markdown('<div class="main-title">⚔️ Simulador de Chefe RPG</div>', unsafe_allow_html=True)
+def render_attack_result(attack: Attack, result: dict, number=None):
+    kind = "Físico" if attack.type == "physical" else "Área"
+    title = f"{number}. {attack.name}" if number is not None else attack.name
+    critical = (
+        f' · <span class="critical">Crítico ×{attack.crit_multiplier}</span>'
+        if result["is_critical"] else ""
+    )
+    effect = ""
+    if attack.type == "area" or attack.effect_dice_count or result["effect_value"]:
+        effect = f'<div><dt>{escape(attack.effect_name)}</dt><dd>{int(result["effect_value"])}</dd></div>'
+    dice = f"{attack.damage_dice_count}d{attack.damage_dice_sides}{attack.damage_bonus:+d}"
     st.markdown(
-        '<div class="subtitle">Ferramenta de narração para RPG de mesa</div>',
-        unsafe_allow_html=True
+        f'<article class="boss-result">'
+        f'<h4>{escape(title)} <span class="attack-kind">{kind}</span>{critical}</h4>'
+        f'<dl><div><dt>Ataque</dt><dd>{int(result["attack_result"])}</dd></div>'
+        f'<div><dt>Dano final</dt><dd>{int(result["final_damage"])}</dd></div>{effect}</dl>'
+        f'<p class="roll-detail">d20 {int(result["natural_roll"])} ({attack.attack_bonus:+d})'
+        f' · {dice} → {int(result["damage_result"])}</p></article>',
+        unsafe_allow_html=True,
     )
 
-    st.markdown('<div class="hp-container">', unsafe_allow_html=True)
-    st.markdown(f'<div class="hp-title">{boss.name}</div>', unsafe_allow_html=True)
 
-    hp = st.number_input(
-        "HP atual",
-        min_value=0,
-        max_value=boss.max_hp,
-        value=st.session_state.boss_hp[boss.name],
-        step=1,
-        key=f"hp_input_{boss.name}",
-        label_visibility="collapsed"
-    )
-    st.session_state.boss_hp[boss.name] = hp
-
-    hp_percentage = (st.session_state.boss_hp[boss.name] / boss.max_hp) * 100 if boss.max_hp else 0
-
-    st.markdown(
-        f"""
-        <div class="hp-value">{st.session_state.boss_hp[boss.name]} / {boss.max_hp}</div>
-        <div class="hp-bar-background">
-            <div class="hp-bar-fill" style="width: {hp_percentage}%;"></div>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-    phase_index = boss.get_current_phase_index(st.session_state.boss_hp[boss.name])
-    phase = boss.ensure_phases()[phase_index]
-    phase_number = phase_index + 1
-    phase_text = f"FASE {phase_number}"
-    if phase.label:
-        phase_text += f" — {phase.label.upper()}"
-
-    st.markdown(
-        f'<div class="phase-badge-wrap">'
-        f'<span class="phase-badge phase-{min(phase_number, 3)}">{phase_text}</span>'
-        f'</div>',
-        unsafe_allow_html=True
-    )
-
-    if st.session_state.statuses[boss.name]:
-        status_html = " ".join(
-            f'<span class="status-box">☠️ {status}</span>'
-            for status in st.session_state.statuses[boss.name]
-        )
-        st.markdown(
-            f'<div style="display:flex;gap:8px;justify-content:center;'
-            f'flex-wrap:wrap;margin-top:15px;">{status_html}</div>',
-            unsafe_allow_html=True
-        )
-
-    st.markdown('</div>', unsafe_allow_html=True)
-
-    # --------------------------------------------------------
-    # ATAQUE MANUAL
-    # --------------------------------------------------------
-
-    if st.session_state.manual_result:
-
-        attack = st.session_state.manual_result["attack"]
-        result = st.session_state.manual_result["result"]
-
-        st.markdown("---")
-        st.subheader(f"🎯 Ataque manual — {attack.name}")
-
-        icon = "🗡️" if attack.type == "physical" else "🔥"
-        tipo = "ATAQUE FÍSICO" if attack.type == "physical" else "ATAQUE EM ÁREA"
-
-        st.markdown(
-            f'<div class="manual-result"><b>{icon} {attack.name}</b><br><small>{tipo}</small></div>',
-            unsafe_allow_html=True
-        )
-
-        render_attack_result(attack, result)
-
-    # --------------------------------------------------------
-    # BOTÃO NOVO TURNO
-    # --------------------------------------------------------
-
-    col_a, col_b, col_c = st.columns([1, 2, 1])
-    with col_b:
-        if st.button("🎲  NOVO TURNO", type="primary", use_container_width=True):
-            new_turn(boss)
-            st.rerun()
-
-    # --------------------------------------------------------
-    # TURNO ATUAL
-    # --------------------------------------------------------
-
-    current_turn = st.session_state.current_turns[boss.name]
-
-    if current_turn:
-
-        st.markdown("---")
-        st.header(f"⚔️ Turno {current_turn['number']}")
-
-        st.subheader("🎯 Combo sorteado")
-
-        combo_cols = st.columns(len(current_turn["results"]))
-
-        for i, item in enumerate(current_turn["results"]):
-            attack = item["attack"]
-            icon = "🗡️" if attack.type == "physical" else "🔥"
-            tipo = "Físico" if attack.type == "physical" else "Área"
-            with combo_cols[i]:
-                st.markdown(
-                    f'<div class="combo-card"><b>{icon} {attack.name}</b><br>'
-                    f'<small>{tipo}</small></div>',
-                    unsafe_allow_html=True
-                )
-
-        st.subheader("🎲 Resultados")
-
-        for i, item in enumerate(current_turn["results"], start=1):
-
-            attack = item["attack"]
-            result = item["result"]
-
-            icon = "🗡️" if attack.type == "physical" else "🔥"
-            tipo = "ATAQUE FÍSICO" if attack.type == "physical" else "ATAQUE EM ÁREA"
-
-            st.markdown(
-                f"""
-                <div class="attack-card">
-                    <div class="attack-title">{icon} {i}. {attack.name}</div>
-                    <div class="attack-type">{tipo}</div>
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
-
-            render_attack_result(attack, result)
-
-            st.markdown("---")
-
-    # --------------------------------------------------------
-    # MATRIZ FIXA
-    # --------------------------------------------------------
-
-    st.markdown("---")
-    st.markdown('<div class="table-title">🎯 Matriz de Reações do Chefe</div>', unsafe_allow_html=True)
-    st.markdown(
-        '<div class="table-subtitle">Valores fixos por ataque — quanto maior, mais difícil</div>',
-        unsafe_allow_html=True
-    )
-
-    header_cols = st.columns([2.4, 1, 1, 1, 1, 1])
-    for col, header in zip(header_cols, ["Ataque"] + MATRIX_COLUMNS):
-        with col:
-            st.markdown(f'<div class="matrix-header">{header}</div>', unsafe_allow_html=True)
-
+def render_matrix(boss: Boss):
+    headers = "".join(f'<th scope="col">{escape(label)}</th>' for label in MATRIX_COLUMNS)
+    rows = []
     for attack in boss.attacks:
+        values = "".join(
+            f'<td class="{matrix_color(value)}">{value}</td>'
+            for value in boss.get_matrix_row(attack.id)
+        )
+        rows.append(f'<tr><th scope="row">{attack.id}. {escape(attack.name)}</th>{values}</tr>')
+    st.markdown(
+        '<div class="boss-matrix"><table>'
+        f'<thead><tr><th scope="col">Ataque</th>{headers}</tr></thead>'
+        f'<tbody>{"".join(rows)}</tbody></table></div>',
+        unsafe_allow_html=True,
+    )
+    st.caption("10–16 · dificuldade menor  |  17–23 · média  |  24–30 · maior")
 
-        values = boss.get_matrix_row(attack.id)
-        row_cols = st.columns([2.4, 1, 1, 1, 1, 1])
 
-        with row_cols[0]:
-            st.markdown(
-                f'<div class="matrix-attack">{attack.id}. {attack.name}</div>',
-                unsafe_allow_html=True
-            )
+def reset_encounter(boss: Boss):
+    state = st.session_state
+    clear_encounter_history(boss.name)
+    state.boss_hp[boss.name] = boss.max_hp
+    state.statuses[boss.name] = []
+    state.manual_result = None
+    state.pop("encounter_history_turn", None)
 
-        for col, value in zip(row_cols[1:], values):
-            color_class = matrix_color(value)
-            with col:
-                st.markdown(
-                    f'<div class="matrix-value {color_class}">{value}</div>',
-                    unsafe_allow_html=True
-                )
 
-    legend_cols = st.columns(3)
-    with legend_cols[0]:
-        st.markdown("🟢 **10–16:** menor dificuldade")
-    with legend_cols[1]:
-        st.markdown("🟡 **17–23:** dificuldade média")
-    with legend_cols[2]:
-        st.markdown("🔴 **24–30:** maior dificuldade")
+def clear_encounter_history(name):
+    state = st.session_state
+    state.histories[name] = []
+    state.current_turns[name] = None
+    state.turn_numbers[name] = 0
 
-    # --------------------------------------------------------
-    # HISTÓRICO
-    # --------------------------------------------------------
 
-    history = st.session_state.histories[boss.name]
 
-    if len(history) > 1:
+def attack_option(attack):
+    kind = "Físico" if attack.type == "physical" else "Área"
+    return f"{attack.id}. {attack.name} · {kind}"
 
-        st.markdown("---")
-        st.header("📜 Histórico")
 
-        for turn in history[1:]:
+def render_combat_main(bosses: dict):
+    state = st.session_state
+    selected = st.selectbox(
+        "Chefe em combate", list(bosses), index=list(bosses).index(state.selected_boss),
+        key="combat_boss", width=460,
+    )
+    if selected != state.selected_boss:
+        state.selected_boss = selected
+        state.manual_result = None
+        state.pop("encounter_history_turn", None)
+    boss = bosses[selected]
+    name = boss.name
+    if state.pop(f"reset_controls_{name}", False):
+        state.pop(f"combat_status_{name}", None)
+        state.pop(f"combat_hp_{name}", None)
 
-            resumo = [item["attack"].name for item in turn["results"]]
-            titulo = f"Turno {turn['number']} — " + " + ".join(resumo)
-
-            with st.expander(titulo):
-                for i, item in enumerate(turn["results"], start=1):
-
-                    attack = item["attack"]
-                    result = item["result"]
-                    crit = " 💥 CRÍTICO" if result["is_critical"] else ""
-
-                    st.write(f"**{i}. {attack.name}**{crit}")
-                    st.write(
-                        f"🎲 {result['natural_roll']} + {attack.attack_bonus} "
-                        f"= **{result['attack_result']}**"
-                    )
-                    st.write(f"💀 Dano: **{result['final_damage']}**")
-                    st.write(f"☠️ {attack.effect_name}: **{result['effect_value']}**")
-
-    # --------------------------------------------------------
-    # BOTÃO FINAL
-    # --------------------------------------------------------
-
-    if current_turn:
-        st.markdown("---")
-        col_a, col_b, col_c = st.columns([1, 2, 1])
-        with col_b:
-            if st.button("🎲  PRÓXIMO TURNO", type="primary", use_container_width=True):
-                new_turn(boss)
+    overview, battle = st.columns([1, 1.8], gap="medium")
+    with overview, st.container(border=True, key="boss-overview"):
+        hp_key = f"combat_hp_{name}"
+        if hp_key not in state:
+            state[hp_key] = state.boss_hp[name]
+        hp = st.number_input("HP atual", min_value=0, max_value=boss.max_hp,
+                             step=1, key=hp_key)
+        state.boss_hp[name] = hp
+        st.progress(hp / boss.max_hp, text=f"{hp} / {boss.max_hp} HP")
+        phase_number = boss.get_current_phase_index(hp) + 1
+        phase = boss.ensure_phases()[phase_number - 1]
+        st.markdown(f"**Fase {phase_number}**" + (f" · {phase.label}" if phase.label else ""))
+        conditions = state.statuses[name]
+        state.statuses[name] = st.multiselect(
+            "Condições do chefe", list(dict.fromkeys(STATUS_OPTIONS + conditions)),
+            default=conditions, key=f"combat_status_{name}",
+        )
+        with st.popover("Ataques da fase"):
+            physical = [attack for attack in boss.get_physical_attacks() if attack.id in phase.physical_ids]
+            area = [attack for attack in boss.get_area_attacks() if attack.id in phase.area_ids]
+            st.markdown("**Físicos**")
+            st.write(", ".join(attack.name for attack in physical) or "—")
+            st.markdown("**Em área**")
+            st.write(", ".join(attack.name for attack in area) or "—")
+        with st.popover("Reiniciar combate"):
+            st.caption("Restaure o HP máximo e apague os turnos e as condições deste chefe.")
+            if st.button("Confirmar reinício", key=f"reset_{name}"):
+                reset_encounter(boss)
+                state[f"reset_controls_{name}"] = True
+                finish_boss_run(bosses)
                 st.rerun()
 
+    with battle:
+        with st.container(border=True, key="boss-actions"):
+            roll_col, manual_col = st.columns([1, 1.5], vertical_alignment="bottom")
+            with roll_col:
+                if st.button("Rolar turno",
+                             type="primary", use_container_width=True, disabled=not boss.attacks):
+                    new_turn(boss)
+                    state["combat_view"] = "Turno"
+            with manual_col, st.popover("Ataque manual", use_container_width=True):
+                choices = {attack.id: attack for attack in boss.attacks}
+                chosen = st.selectbox("Ataque", list(choices), format_func=lambda key: attack_option(choices[key]),
+                                      key=f"combat_attack_{name}")
+                if st.button("Rolar ataque", disabled=chosen is None, key="roll_manual"):
+                    attack = choices[chosen]
+                    state.manual_result = {"attack": attack, "result": attack.execute()}
+                    state["combat_view"] = "Turno"
 
-# ============================================================
-# RENDER: EDITOR DE BOSSES
-# ============================================================
+        view = st.radio("Visualização", ["Turno", "Matriz de reações", "Histórico"],
+                        horizontal=True, label_visibility="collapsed", key="combat_view")
+        if view == "Matriz de reações":
+            render_matrix(boss)
+        elif view == "Histórico":
+            history = state.histories[name]
+            if not history:
+                st.caption("Nenhum turno registrado.")
+                return
+            turns = {turn["number"]: turn for turn in history}
+            turn_number = st.selectbox("Turno registrado", list(turns), key="encounter_history_turn")
+            with st.popover("Limpar histórico"):
+                st.caption("Apague os turnos registrados e reinicie a contagem.")
+                if st.button("Confirmar limpeza"):
+                    clear_encounter_history(name)
+                    finish_boss_run(bosses)
+                    st.rerun()
+            render_turn(turns[turn_number])
+        else:
+            manual = state.manual_result
+            if manual:
+                with st.container(border=True):
+                    heading, close = st.columns([3, 1], vertical_alignment="center")
+                    heading.markdown("**Ataque manual**")
+                    if close.button("Dispensar", key="dismiss_manual"):
+                        state.manual_result = None
+                    else:
+                        render_attack_result(manual["attack"], manual["result"])
+            turn = state.current_turns[name]
+            if turn:
+                st.subheader(f"Turno {turn['number']}")
+                render_turn(turn)
+            elif not manual:
+                st.caption("Inicie um turno para sortear o combo do chefe.")
+
+
+def render_turn(turn):
+    if not turn["results"]:
+        st.caption("Este turno ficou sem ataques disponíveis na biblioteca.")
+        return
+    with st.container(border=True):
+        for number, item in enumerate(turn["results"], start=1):
+            render_attack_result(item["attack"], item["result"], number)
+
 
 def default_attack_template(i):
     return Attack(
@@ -1479,84 +1007,61 @@ def editor_key_base():
     return f"EX_{st.session_state.editor_target}"
 
 
-def render_editor_sidebar(bosses: dict):
-
-    with st.sidebar:
-
-        st.header("⚙️ Editor de Bosses")
-
-        names = list(bosses.keys())
-
-        if names and not st.session_state.editor_creating:
-
-            current = st.session_state.editor_target
-            if current not in names:
-                current = names[0]
-
-            chosen = st.selectbox(
-                "Boss para editar",
-                names,
-                index=names.index(current),
-                key="editor_target_select"
-            )
-
-            if chosen != st.session_state.editor_target:
-                st.session_state.editor_target = chosen
-                st.session_state.confirm_delete = False
-                st.rerun()
-
-        st.divider()
-
-        col1, col2 = st.columns(2)
-
-        with col1:
-            if st.button("➕ Novo Boss", use_container_width=True):
-                st.session_state.editor_creating = True
-                st.session_state.editor_target = None
-                st.session_state.new_boss_counter += 1
-                st.session_state.confirm_delete = False
-                st.rerun()
-
-        with col2:
-            delete_disabled = len(bosses) <= 1 or st.session_state.editor_creating
-            if st.button("🗑️ Apagar Boss", use_container_width=True, disabled=delete_disabled):
-                st.session_state.delete_target = st.session_state.editor_target
-                st.session_state.confirm_delete = True
-                st.rerun()
-
-        if names and not st.session_state.editor_creating:
-            if st.button("📚 Duplicar chefe na biblioteca", use_container_width=True):
-                base_name = st.session_state.editor_target
-                source = bosses[base_name]
+def render_library_controls(bosses: dict):
+    state = st.session_state
+    names = list(bosses)
+    selector, add, actions = st.columns([2, 1, 1], vertical_alignment="bottom")
+    if not state.editor_creating:
+        if state.editor_target not in bosses:
+            state.editor_target = state.selected_boss
+        chosen = selector.selectbox("Chefe na biblioteca", names, index=names.index(state.editor_target),
+                                    key="editor_target_select")
+        if chosen != state.editor_target:
+            state.editor_target = chosen
+            state.confirm_delete = False
+    if add.button("Novo chefe", use_container_width=True, disabled=state.editor_creating):
+        state.editor_creating = True
+        state.editor_target = None
+        state.new_boss_counter += 1
+        state.confirm_delete = False
+        st.rerun()
+    if state.editor_creating:
+        if actions.button("Voltar à lista", use_container_width=True):
+            state.editor_creating = False
+            state.editor_target = state.selected_boss
+            st.rerun()
+    else:
+        with actions.popover("Ações da biblioteca", use_container_width=True):
+            if st.button("Duplicar chefe", use_container_width=True):
+                base_name = state.editor_target
                 proposed = f"{base_name} (cópia)"
                 suffix = 2
                 while proposed in bosses:
                     proposed = f"{base_name} (cópia {suffix})"
                     suffix += 1
-                cloned = dict_to_boss(boss_to_dict(source))
+                cloned = dict_to_boss(boss_to_dict(bosses[base_name]))
                 cloned.name = proposed
                 bosses[proposed] = cloned
                 if save_bosses(bosses):
                     init_boss_state(proposed, cloned.max_hp, cloned.max_hp)
-                    st.session_state.editor_target = proposed
-                    st.session_state.selected_boss = proposed
+                    state.editor_target = proposed
+                    state.selected_boss = proposed
+                    state.manual_result = None
+                    state.pop("editor_target_select", None)
+                    finish_boss_run(bosses)
                     st.rerun()
                 bosses.pop(proposed, None)
-
-        st.divider()
-
-        if st.button("↩️ Voltar ao combate", use_container_width=True):
-            st.session_state.app_mode = "combat"
-            st.session_state.editor_creating = False
-            st.session_state.confirm_delete = False
-            st.rerun()
+            if st.button("Excluir chefe", disabled=len(bosses) <= 1, use_container_width=True):
+                state.delete_target = state.editor_target
+                state.confirm_delete = True
+                st.rerun()
 
 
 def render_delete_confirmation(bosses: dict):
 
     target = st.session_state.delete_target
 
-    st.markdown('<div class="editor-title">🗑️ Apagar boss</div>', unsafe_allow_html=True)
+    st.subheader("Excluir chefe")
     st.warning(
         f"Tem certeza que deseja apagar **{target}**? "
         f"Essa ação não pode ser desfeita."
@@ -1582,7 +1087,8 @@ def render_delete_confirmation(bosses: dict):
             st.session_state.delete_target = None
             st.session_state.app_mode = "combat"
 
-            st.success(f"Boss '{target}' apagado.")
+            st.session_state.manual_result = None
+            finish_boss_run(bosses)
             st.rerun()
 
     with col2:
@@ -1621,11 +1127,11 @@ def render_boss_editor_form(bosses: dict):
 
     base = editor_key_base()
 
-    title = "➕ Criar novo boss" if creating else f"⚙️ Editando: {editor_target}"
-    st.markdown(f'<div class="editor-title">{title}</div>', unsafe_allow_html=True)
+    title = "Novo chefe" if creating else "Ficha do chefe"
+    st.subheader(title)
 
     tab_dados, tab_ataques, tab_fases, tab_matriz = st.tabs(
-        ["📋 Dados do Boss", "⚔️ Ataques", "🌀 Fases", "🎯 Matriz de Reações"]
+        ["Dados", "Ataques", "Fases", "Matriz de reações"]
     )
 
     # ---------------------------------------------------
@@ -1634,29 +1140,13 @@ def render_boss_editor_form(bosses: dict):
 
     with tab_dados:
 
-        boss_name = st.text_input(
-            "Nome do boss",
-            value=default_name,
-            key=f"{base}_boss_name"
-        )
-
-        max_hp = st.number_input(
-            "HP máximo",
-            min_value=1,
-            max_value=100000,
-            value=int(default_max_hp),
-            step=1,
-            key=f"{base}_max_hp"
-        )
-
-        hp_atual = st.number_input(
-            "HP atual",
-            min_value=0,
-            max_value=int(max_hp),
-            value=min(int(default_hp), int(max_hp)),
-            step=1,
-            key=f"{base}_hp_atual"
-        )
+        details, maximum, health = st.columns([2, 1, 1])
+        boss_name = details.text_input("Nome", value=default_name, key=f"{base}_boss_name")
+        max_hp = maximum.number_input("HP máximo", min_value=1, max_value=100000,
+                                      value=int(default_max_hp), step=1, key=f"{base}_max_hp")
+        hp_atual = health.number_input("HP atual", min_value=0, max_value=int(max_hp),
+                                       value=min(int(default_hp), int(max_hp)), step=1,
+                                       key=f"{base}_hp_atual")
 
     # ---------------------------------------------------
     # ATAQUES
@@ -1678,7 +1168,8 @@ def render_boss_editor_form(bosses: dict):
             else:
                 template = default_attack_template(i)
 
-            with st.expander(f"Ataque {i} — {template.name}", expanded=False):
+            with st.expander(f"{i}. {st.session_state.get(f'{base}_atk{i}_name') or template.name}"):
+
 
                 a_key = f"{base}_atk{i}"
 
@@ -1849,29 +1340,18 @@ def render_boss_editor_form(bosses: dict):
 
             col_phys, col_area = st.columns(2)
 
-            with col_phys:
-                st.caption("🗡️ Ataques físicos desbloqueados")
-                selected_physical = []
-                for atk in physical_in_editor:
-                    checked = st.checkbox(
-                        f"{atk.id}. {atk.name}",
-                        value=atk.id in phase_default.physical_ids,
-                        key=f"{base}_phase{idx}_phys_{atk.id}"
-                    )
-                    if checked:
-                        selected_physical.append(atk.id)
-
-            with col_area:
-                st.caption("🔥 Ataques em área desbloqueados")
-                selected_area = []
-                for atk in area_in_editor:
-                    checked = st.checkbox(
-                        f"{atk.id}. {atk.name}",
-                        value=atk.id in phase_default.area_ids,
-                        key=f"{base}_phase{idx}_area_{atk.id}"
-                    )
-                    if checked:
-                        selected_area.append(atk.id)
+            physical_names = {atk.id: atk.name for atk in physical_in_editor}
+            area_names = {atk.id: atk.name for atk in area_in_editor}
+            selected_physical = col_phys.multiselect(
+                "Ataques físicos", list(physical_names),
+                default=[atk_id for atk_id in phase_default.physical_ids if atk_id in physical_names],
+                format_func=physical_names.__getitem__, key=f"{base}_phase{idx}_physical"
+            )
+            selected_area = col_area.multiselect(
+                "Ataques em área", list(area_names),
+                default=[atk_id for atk_id in phase_default.area_ids if atk_id in area_names],
+                format_func=area_names.__getitem__, key=f"{base}_phase{idx}_area"
+            )
 
             phase_values.append(Phase(
                 hp_max=int(hp_max),
@@ -1923,24 +1403,9 @@ def render_boss_editor_form(bosses: dict):
             matrix_values[str(atk.id)] = row_values
 
     # ---------------------------------------------------
-    # SALVAR / CANCELAR
+    # Salvar ficha
     # ---------------------------------------------------
-
-    st.markdown("---")
-
-    col_save, col_cancel = st.columns([1, 1])
-
-    with col_save:
-        save_clicked = st.button("💾 Salvar alterações", type="primary", use_container_width=True)
-
-    with col_cancel:
-        cancel_clicked = st.button("↩️ Cancelar", use_container_width=True)
-
-    if cancel_clicked:
-        st.session_state.editor_creating = False
-        st.session_state.editor_target = st.session_state.selected_boss
-        st.session_state.app_mode = "combat"
-        st.rerun()
+    save_clicked = st.button("Salvar chefe", type="primary")
 
     if save_clicked:
 
@@ -1967,28 +1432,28 @@ def render_boss_editor_form(bosses: dict):
             phases=phase_values,
         )
 
+        updated = dict(bosses)
+        if not creating and editor_target != final_name:
+            del updated[editor_target]
+        updated[final_name] = new_boss
+        if not save_bosses(updated):
+            return
+        bosses.update(updated)
         if creating:
-            bosses[final_name] = new_boss
             init_boss_state(final_name, int(max_hp), int(hp_atual))
-
         else:
-            old_name = editor_target
-            if old_name != final_name:
-                del bosses[old_name]
-                rename_boss_state(old_name, final_name)
-            bosses[final_name] = new_boss
+            if editor_target != final_name:
+                del bosses[editor_target]
+                rename_boss_state(editor_target, final_name)
             st.session_state.boss_hp[final_name] = int(hp_atual)
-
-        if not save_bosses(bosses):
-            st.error("Falha ao salvar. Atualize antes de tentar novamente.")
-            st.stop()
 
         st.session_state.selected_boss = final_name
         st.session_state.editor_target = final_name
         st.session_state.editor_creating = False
         st.session_state.app_mode = "combat"
 
-        st.success(f"Boss '{final_name}' salvo com sucesso.")
+        st.session_state.manual_result = None
+        finish_boss_run(bosses)
         st.rerun()
 
 
@@ -2180,7 +1645,7 @@ def boss_from_import_json(data: dict) -> Boss:
 
 
 def render_json_import(bosses: dict):
-    with st.expander("📥 Importar boss via JSON (gerado por IA)", expanded=False):
+    with st.expander("Importar JSON", expanded=False):
         st.caption(
             "Cole um JSON ou envie um arquivo .json. É possível importar um boss "
             "ou vários no formato {\"Nome\": {...}, \"Outro\": {...}}."
@@ -2277,6 +1742,14 @@ def render_json_import(bosses: dict):
 
             imported.append((new_boss, existing_name))
 
+        updated = dict(bosses)
+        for new_boss, existing_name in imported:
+            if existing_name is not None and existing_name != new_boss.name:
+                del updated[existing_name]
+            updated[new_boss.name] = new_boss
+        if not save_bosses(updated):
+            return
+
         for new_boss, existing_name in imported:
             if existing_name is not None:
                 if existing_name != new_boss.name:
@@ -2302,20 +1775,15 @@ def render_json_import(bosses: dict):
 
             bosses[new_boss.name] = new_boss
 
-        if not save_bosses(bosses):
-            st.error("Importação não confirmada no banco; nenhuma alteração será anunciada.")
-            st.stop()
-
         last_imported_name = imported[-1][0].name
         st.session_state.selected_boss = last_imported_name
         st.session_state.editor_target = last_imported_name
         st.session_state.editor_creating = False
         st.session_state.confirm_delete = False
 
-        st.success(
-            "Boss(es) importado(s): "
-            + ", ".join(boss.name for boss, _ in imported)
-        )
+        st.session_state.manual_result = None
+        st.session_state.pop("editor_target_select", None)
+        finish_boss_run(bosses)
         st.rerun()
 
 
@@ -2328,123 +1796,143 @@ def render_editor_main(bosses: dict):
         render_boss_editor_form(bosses)
 
 
-# ============================================================
-# APP PRINCIPAL
-#
-#              app.py
-#                │
-#       carrega bosses.json
-#                │
-#        ┌───────┴───────┐
-#        ↓               ↓
-#  MODO COMBATE       EDITOR
-#        │               │
-#  usa dados do      altera dados
-#     boss                │
-#        │               ↓
-#        └────────→ bosses.json
-# ============================================================
-
-def render_shared_display_controls(bosses: dict):
-    """Configura o painel de cena/chefe consumido pelo painel geral."""
-    if not shared_enabled():
-        st.sidebar.warning("Configure as credenciais Supabase para sincronizar.")
+def render_shared_display_controls():
+    record = fetch_app_state("boss_config")
+    if record["status"] != "found":
+        st.error("Não foi possível carregar a cena publicada.")
         return
-    config = load_app_state("boss_config", {}) or {}
-    display = config.get("display", {}) or {}
-    st.sidebar.divider()
-    st.sidebar.subheader("Cena compartilhada")
-    mode = st.sidebar.radio("Modo exibido", ["Chefe", "Cena narrativa"], index=0 if display.get("mode", "Chefe") == "Chefe" else 1, key="shared_display_mode")
-    scene_name = st.sidebar.text_input("Nome da cena", value=display.get("scene_name", "Cena atual"), key="shared_scene_name")
-    show_scene = st.sidebar.checkbox("Exibir imagem da cena", value=display.get("show_scene", True), key="shared_show_scene")
-    selected_name = st.session_state.get("selected_boss", next(iter(bosses)))
-    boss_file = st.sidebar.file_uploader(f"Imagem do chefe: {selected_name}", type=["png", "jpg", "jpeg"], key="shared_boss_upload")
-    boss_images = display.get("boss_images", {}) or {}
-    if boss_file is not None and st.session_state.get("_boss_upload_name") != boss_file.name:
-        mime = boss_file.type or "image/png"
-        url = upload_asset(f"bosses/{selected_name.replace(' ', '_')}_{boss_file.name.replace(' ', '_')}", boss_file.getvalue(), mime)
-        if url:
-            boss_images[selected_name] = url
-            display["boss_images"] = boss_images
-            st.session_state["_boss_upload_name"] = boss_file.name
-    with st.sidebar.expander("🎯 Tokens de inimigos (Mob 1–5)", expanded=False):
-        from image_manager import prepare_image
-        from uuid import uuid4
-        mob_tokens = dict(config.get("mob_tokens", {}) or {})
-        for slot in range(1, 6):
-            token_id = f"mob_{slot}"
-            st.caption(f"Mob {slot}")
-            if mob_tokens.get(token_id):
-                st.image(mob_tokens[token_id], width=72)
-            file = st.file_uploader(f"PNG do Mob {slot}", type=["png", "webp", "jpg", "jpeg"],
-                                    key=f"mob_token_upload_{slot}")
-            if file is not None and st.button(f"Publicar Mob {slot}", key=f"mob_token_save_{slot}"):
-                try:
-                    token_bytes = prepare_image(file.getvalue(), "token")
-                    token_url = upload_asset(f"bosses/tokens/{token_id}_{uuid4().hex}.webp",
-                                             token_bytes, "image/webp")
-                    if token_url:
-                        mob_tokens[token_id] = token_url
-                        config["mob_tokens"] = mob_tokens
-                        if save_app_state("boss_config", config):
-                            st.success(f"Mob {slot} publicado no mapa.")
-                except ValueError as exc:
-                    st.error(str(exc))
-    if st.sidebar.button("Publicar cena no painel", use_container_width=True):
-        display.update({"mode": mode, "scene_name": scene_name, "show_scene": show_scene, "boss_images": boss_images})
-        config["display"] = display
-        save_app_state("boss_config", config)
-        st.session_state["_boss_display_changed"] = True
-        st.sidebar.success("Configuração da cena salva.")
-    # Evitar gravações não solicitadas em reruns passivos.
+    config = dict(record["data"])
+    display = dict(config.get("display") or {})
+    name = st.session_state.selected_boss
+    image = (display.get("boss_images") or {}).get(name)
+    scene, tokens = st.columns([1.4, 1], gap="medium")
+    with scene, st.container(border=True):
+        st.subheader("Exibição no painel")
+        st.caption(f"Chefe selecionado · {name}")
+        if image:
+            st.image(image, width=160)
+        with st.form("publish_boss_scene"):
+            mode = st.radio("Modo", ["Chefe", "Cena narrativa"], horizontal=True,
+                            index=0 if display.get("mode", "Chefe") == "Chefe" else 1)
+            scene_name = st.text_input("Nome da cena", value=display.get("scene_name", "Cena atual"))
+            show_scene = st.checkbox("Exibir imagem da cena", value=display.get("show_scene", True))
+            portrait = st.file_uploader("Retrato deste chefe", type=["png", "jpg", "jpeg", "webp"],
+                                        key=f"scene_portrait_{name}")
+            if st.form_submit_button("Publicar no painel", type="primary"):
+                if portrait:
+                    from uuid import uuid4
+                    suffix = portrait.name.rsplit(".", 1)[-1].lower()
+                    url = upload_asset(f"bosses/portraits/{uuid4().hex}.{suffix}",
+                                       portrait.getvalue(), portrait.type)
+                    if not url:
+                        st.error("Não foi possível enviar o retrato.")
+                        return
+                    display["boss_images"] = {**(display.get("boss_images") or {}), name: url}
+                display.update(mode=mode, scene_name=scene_name, show_scene=show_scene)
+                config["display"] = display
+                if compare_and_set_app_state("boss_config", record["updated_at"], config):
+                    st.session_state["_boss_display_changed"] = True
+                else:
+                    st.error("A configuração mudou em outra sessão. Tente publicar novamente.")
+
+    with tokens, st.container(border=True):
+        st.subheader("Tokens de inimigos")
+        slot = st.selectbox("Token", range(1, 6), format_func=lambda n: f"Mob {n}")
+        token_id = f"mob_{slot}"
+        mob_tokens = dict(config.get("mob_tokens") or {})
+        if mob_tokens.get(token_id):
+            st.image(mob_tokens[token_id], width=88)
+        file = st.file_uploader("Imagem do token", type=["png", "webp", "jpg", "jpeg"],
+                                key=f"mob_token_{slot}")
+        if st.button("Publicar token", disabled=file is None):
+            from image_manager import prepare_image
+            from uuid import uuid4
+            try:
+                data = prepare_image(file.getvalue(), "token")
+            except ValueError as exc:
+                st.error(str(exc))
+                return
+            url = upload_asset(f"bosses/tokens/{token_id}_{uuid4().hex}.webp", data, "image/webp")
+            if not url:
+                st.error("Não foi possível enviar o token.")
+                return
+            mob_tokens[token_id] = url
+            config["mob_tokens"] = mob_tokens
+            if compare_and_set_app_state("boss_config", record["updated_at"], config):
+                st.success(f"Mob {slot} publicado no mapa.")
+            else:
+                st.error("A configuração mudou em outra sessão. Tente publicar novamente.")
 
 
 def publish_current_boss(bosses: dict):
-    if not shared_enabled() or not bosses:
-        return
-    name = st.session_state.get("selected_boss", next(iter(bosses)))
-    boss = bosses.get(name)
-    if not boss:
-        return
-    config = load_app_state("boss_config", {}) or {}
-    display = config.get("display", {}) or {}
-    hp = st.session_state.get("boss_hp", {}).get(name, boss.max_hp)
-    previous = load_app_state("table_display", {}) or {}
-    # Keep the image uploaded directly in the table panel. The boss simulator
-    # only owns boss stats, mode and boss portrait, never the scene image.
-    scene_url = previous.get("scene_image_url") or display.get("scene_image_url", "")
-    save_app_state("table_display", {
+    name = st.session_state.selected_boss
+    boss = bosses[name]
+    config_record = fetch_app_state("boss_config")
+    current_record = fetch_app_state("table_display")
+    if config_record["status"] != "found" or current_record["status"] == "error":
+        return False
+
+    display = config_record["data"].get("display") or {}
+    previous = current_record["data"] or {}
+    hp = st.session_state.boss_hp[name]
+    values = {
         "mode": display.get("mode", "Chefe"),
         "scene_name": display.get("scene_name", "Cena atual"),
         "show_scene": display.get("show_scene", True),
-        "scene_image_url": scene_url,
+        "scene_image_url": previous.get("scene_image_url", display.get("scene_image_url", "")),
         "boss_name": name,
-        "boss_image_url": (display.get("boss_images", {}) or {}).get(name, ""),
+        "boss_image_url": (display.get("boss_images") or {}).get(name, ""),
         "boss_hp": max(0, min(int(hp), int(boss.max_hp))),
         "boss_max_hp": int(boss.max_hp),
-        "updated_at": __import__("datetime").datetime.now().isoformat(),
-    })
+    }
+    if all(previous.get(key) == value for key, value in values.items()):
+        return True
+    published = {**previous, **values, "updated_at": datetime.now(timezone.utc).isoformat()}
+    if current_record["status"] == "missing":
+        return create_app_state_if_missing("table_display", published)
+    return compare_and_set_app_state("table_display", current_record["updated_at"], published)
+
+
+def finish_boss_run(bosses):
+    state = st.session_state
+    if persist_runtime(bosses, st.session_state):
+        state["_boss_display_changed"] = True
+    if state.get("_boss_runtime_conflict"):
+        st.error("Outra sessão modificou o combate. Recarregue a página para buscar a versão atual.")
+    elif state.get("_boss_display_changed") and publish_current_boss(bosses):
+        state.pop("_boss_display_changed", None)
+        if state.app_mode == "scene":
+            st.success("Exibição atualizada no painel.")
 
 
 def main():
-
     bosses = load_bosses()
     init_session_state(bosses)
     hydrate_runtime(bosses, st.session_state)
+    state = st.session_state
 
-    render_shared_display_controls(bosses)
-    if st.session_state.app_mode == "editor":
-        render_editor_sidebar(bosses)
+    st.title("Simulador de chefe")
+    navigation = st.columns(3, gap="small")
+    for col, (label, mode) in zip(navigation, (("Combate", "combat"), ("Biblioteca", "editor"), ("Cena", "scene"))):
+        if col.button(label, key=f"boss_nav_{mode}", use_container_width=True,
+                      type="primary" if state.app_mode == mode else "secondary"):
+            if state.app_mode != mode:
+                state.app_mode = mode
+                if mode == "editor":
+                    state.editor_target = state.selected_boss
+                    state.editor_creating = False
+                    state.confirm_delete = False
+                st.rerun()
+
+    if state.app_mode == "editor":
+        render_library_controls(bosses)
         render_editor_main(bosses)
+    elif state.app_mode == "scene":
+        render_shared_display_controls()
     else:
-        boss = bosses[st.session_state.selected_boss]
-        render_combat_sidebar(bosses, boss)
-        render_combat_main(boss)
-    changed = persist_runtime(bosses, st.session_state)
-    if st.session_state.get("_boss_runtime_conflict"):
-        st.error("Outra sessão modificou este combate. Atualize a página antes de tentar salvar novamente.")
-    if changed or st.session_state.pop("_boss_display_changed", False):
-        publish_current_boss(bosses)
+        render_combat_main(bosses)
+
+    finish_boss_run(bosses)
 
 
 if __name__ == "__main__":

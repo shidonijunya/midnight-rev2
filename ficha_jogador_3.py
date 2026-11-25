@@ -1,5 +1,6 @@
 import json
 import os
+import re
 
 import streamlit as st
 from shared_backend import load_character, fetch_character, create_character_if_missing, save_character, patch_character, shared_enabled, upload_asset
@@ -231,6 +232,11 @@ st.markdown("""
 .stat-highlight-value,.info-value { color:#eef0f6; font-size:1.2rem; }
 [data-testid="stVerticalBlock"] { gap:.6rem; }
 [data-testid="stTabs"] [role="tablist"] { overflow-x:auto; gap:.8rem; }
+.stMainBlockContainer.block-container { padding-top: 4.5rem; }
+.st-key-sheet-overview { padding: 1rem; }
+.st-key-sheet-secondary { margin-top:.85rem; padding-top:.65rem; border-top:1px solid #343844; }
+.attr-mod { margin:0; text-align:center; line-height:1.2; padding:0 0 .45rem; }
+[data-testid="stColumn"]:has(.attr-mod) [data-testid="stVerticalBlock"] { gap:.22rem; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -332,6 +338,7 @@ def build_default_state() -> dict:
         "nivel": 1,
         "fragmentos_essencia": 0,
         "weapon_slots_count": 5,
+        "inventory_count": 8,
         "requiem_atual": 0,
         "hp_atual": None,
         "mana_atual": None,
@@ -381,12 +388,12 @@ def build_default_state() -> dict:
     return state
 
 
-def all_persisted_keys():
+def all_persisted_keys(extra_keys=()):
     """Lista de todas as chaves de session_state que compõem a ficha."""
 
     keys = [
         "nome_personagem", "nivel", "fragmentos_essencia",
-        "weapon_slots_count", "requiem_atual",
+        "weapon_slots_count", "inventory_count", "requiem_atual",
         "hp_atual", "mana_atual", "estamina_atual", "imagem_url", "token_url",
     ]
 
@@ -408,6 +415,8 @@ def all_persisted_keys():
     for i in range(NUM_INVENTARIO):
         keys.extend(inventory_keys(i).values())
 
+    keys.extend(k for k in (*st.session_state.keys(), *extra_keys)
+                if re.fullmatch(r"inv_\d+_(nome|qtd|desc)", str(k)))
     return keys
 
 
@@ -421,7 +430,7 @@ def collect_state() -> dict:
 
 def apply_loaded_data(data: dict):
     """Aplica um dicionário carregado (arquivo local ou upload) ao session_state."""
-    valid_keys = set(all_persisted_keys())
+    valid_keys = set(all_persisted_keys(data))
     for k, v in data.items():
         if k in valid_keys:
             st.session_state[k] = v
@@ -493,7 +502,7 @@ def resetar_estamina_callback():
 
 def render_header():
 
-    col1, col2, col3, portrait = st.columns([2.5, 1, 1.5, 1])
+    col1, col2, col3, portrait = st.columns([2.3, 1, 1.6, .85], vertical_alignment="bottom")
 
     with col1:
         st.text_input("Nome do personagem", key="nome_personagem")
@@ -508,7 +517,7 @@ def render_header():
             "Fragmentos de Essência", min_value=0, step=1, key="fragmentos_essencia"
         )
 
-    with portrait.popover("Retrato"):
+    with portrait.popover("🖼️", help="Alterar retrato do personagem"):
         from image_manager import render_image_editor
         new_image_url = render_image_editor("portrait", PLAYER_ID,
                       st.session_state.get("imagem_url", ""), key=f"portrait_{PLAYER_ID}")
@@ -520,33 +529,6 @@ def render_header():
 
 
 
-
-def render_version_history():
-    """Browse snapshots; only a logged-in master can restore older values."""
-    from shared_backend import list_character_history, restore_character_version, auth_configured
-    versions = list_character_history(PLAYER_ID)
-    if not versions:
-        return
-    chosen = st.selectbox("Versões anteriores", range(len(versions)),
-        format_func=lambda i: str(versions[i].get("saved_at", "?"))[:19].replace("T", " ") +
-                            " — " + str(versions[i].get("reason", "edição")),
-        key=f"history_version_{PLAYER_ID}")
-    snapshot = versions[chosen].get("data", {})
-    st.caption("Nome: " + str(snapshot.get("nome_personagem", "?")) +
-               " · Nível: " + str(snapshot.get("nivel", "?")))
-    if auth_configured() and st.session_state.get("_midnight_role") == "mestre":
-        confirm = st.checkbox("Confirmo a restauração desta versão", key=f"confirm_history_{PLAYER_ID}")
-        if st.button("Restaurar versão", disabled=not confirm, key=f"restore_history_{PLAYER_ID}"):
-            if restore_character_version(PLAYER_ID, chosen):
-                st.session_state.pop("ficha_inicializada", None)
-                st.rerun()
-            st.error("Não foi possível restaurar a versão selecionada.")
-
-
-
-# ============================================================
-# RENDER: ATRIBUTOS
-# ============================================================
 
 def render_atributos():
 
@@ -745,7 +727,7 @@ def render_pericias():
 
     mods = get_modificadores_dict()
 
-    header = st.columns([2.4, 1.2, 1, 1.4])
+    header = st.columns([2.4, 1.2, 1, 1.4], vertical_alignment="center")
     for c, txt in zip(header, ["Perícia", "Modificador", "Treinado", "Bônus"]):
         with c:
             st.markdown(f"**{txt}**")
@@ -757,7 +739,7 @@ def render_pericias():
         treinado = st.session_state[pericia_key(pericia)]
         bonus = bonus_treinado(mod_pericia) if treinado else bonus_nao_treinado(mod_pericia)
 
-        cols = st.columns([2.4, 1.2, 1, 1.4])
+        cols = st.columns([2.4, 1.2, 1, 1.4], vertical_alignment="center")
 
         with cols[0]:
             st.write(f"**{pericia}** ({'/'.join(a[:3] for a in attrs_pericia)})")
@@ -954,15 +936,35 @@ def render_armadura():
 # RENDER: INVENTÁRIO
 # ============================================================
 
+def resize_inventory(expected, remove=False):
+    state = st.session_state
+    count = state.get("inventory_count", 8)
+    if count != expected or (remove and count == 0):
+        return
+    changes = {"inventory_count": count - 1 if remove else count + 1}
+    if remove:
+        keys = inventory_keys(count - 1)
+        changes.update({keys["nome"]: "", keys["qtd"]: 0, keys["desc"]: ""})
+    if shared_enabled() and not patch_character(PLAYER_ID, changes):
+        state["_inventory_error"] = True
+        return
+    state.update(changes)
+    state.setdefault("_last_synced_snapshot", {}).update(changes)
+
+
 def render_inventario():
-
-
-    col_a, col_b = st.columns(2)
-    metade = 4
-
-    for idx_col, (col, faixa) in enumerate(
-        zip([col_a, col_b], [range(0, metade), range(metade, 8)])
-    ):
+    count = st.session_state.get("inventory_count", 8)
+    with st.container(horizontal=True):
+        st.button("Adicionar item", on_click=resize_inventory, args=(count,))
+        with st.popover("Excluir último", disabled=count == 0):
+            name = st.session_state.get(inventory_keys(count - 1)["nome"]) or f"Item {count}"
+            st.write(f'Excluir o item {count} (“{name}”), a quantidade e a descrição?')
+            st.button("Confirmar exclusão", key=f"delete_inventory_{count}",
+                      on_click=resize_inventory, args=(count, True), type="primary")
+    if st.session_state.pop("_inventory_error", False):
+        st.error("Não foi possível salvar a alteração no inventário.")
+    metade = (count + 1) // 2
+    for col, faixa in zip(st.columns(2), (range(metade), range(metade, count))):
         with col:
             for i in faixa:
                 keys = inventory_keys(i)
@@ -1026,13 +1028,13 @@ def main():
     with overview, st.container(border=True, key="sheet-overview"):
         render_header()
         render_barras()
-        render_destaques()
+        with st.container(key="sheet-secondary"):
+            render_destaques()
     with editor:
         sections = {
             "Atributos": render_atributos, "Perícias": render_pericias,
             "Defesas": render_defesas, "Armas": render_armas,
             "Armadura": render_armadura, "Inventário": render_inventario,
-            "Histórico": render_version_history,
         }
         for tab, render in zip(st.tabs(list(sections)), sections.values()):
             with tab, st.container(height=490):

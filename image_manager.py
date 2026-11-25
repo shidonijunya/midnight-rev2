@@ -20,8 +20,11 @@ def prepare_image(raw, kind, focus=(0.5, 0.5)):
         with Image.open(BytesIO(raw)) as src:
             if src.width * src.height > 40_000_000:
                 raise ValueError("Imagem muito grande.")
-            rgb = ImageOps.exif_transpose(src).convert("RGBA" if kind == "token" else "RGB")
-            if kind == "token":
+            rgb = ImageOps.exif_transpose(src).convert("RGBA" if kind in ("token", "scene") else "RGB")
+            if kind == "scene":
+                output = BytesIO()
+                rgb.save(output, format="WEBP", lossless=True, method=4)
+            elif kind == "token":
                 # Preserve transparent edges and native detail, never upscale.
                 # Older 256px token conversions blurred fine lines unnecessarily.
                 rgb.thumbnail(SIZES[kind], Image.Resampling.LANCZOS)
@@ -47,9 +50,11 @@ def render_image_editor(kind, owner_id, current_url="", key="portrait"):
                             key=f"{key}_file")
     if not file:
         return current_url
-    h, v = st.columns(2)
-    horizontal = h.slider("Enquadramento horizontal", 0, 100, 50, key=f"{key}_horizontal")
-    vertical = v.slider("Enquadramento vertical", 0, 100, 50, key=f"{key}_vertical")
+    horizontal = vertical = 50
+    if kind != "scene":
+        h, v = st.columns(2)
+        horizontal = h.slider("Enquadramento horizontal", 0, 100, 50, key=f"{key}_horizontal")
+        vertical = v.slider("Enquadramento vertical", 0, 100, 50, key=f"{key}_vertical")
     try:
         edited = prepare_image(file.getvalue(), kind,
                                (horizontal / 100, vertical / 100))
@@ -79,10 +84,11 @@ def upload_map_background(file):
         with Image.open(BytesIO(raw)) as image:
             if image.width * image.height > 40_000_000:
                 raise ValueError("Mapa muito grande.")
-            rgb = ImageOps.exif_transpose(image).convert("RGB")
-            rgb.thumbnail((2600, 2600), Image.Resampling.LANCZOS)
-            out = BytesIO()
-            rgb.save(out, "WEBP", quality=88, method=5)
+            formats = {"JPEG": ("jpg", "image/jpeg"), "PNG": ("png", "image/png"), "WEBP": ("webp", "image/webp")}
+            if image.format not in formats:
+                raise ValueError("Formato de mapa inválido.")
+            ext, mime = formats[image.format]
+            image.verify()
     except (UnidentifiedImageError, OSError) as exc:
         raise ValueError("Imagem de mapa inválida.") from exc
-    return upload_asset(f"scenes/maps/{uuid4().hex}.webp", out.getvalue(), "image/webp")
+    return upload_asset(f"scenes/maps/{uuid4().hex}.{ext}", raw, mime)

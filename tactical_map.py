@@ -53,11 +53,7 @@ ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality="high";
 const tip=document.getElementById('tip'),tokenSelect=document.getElementById('token'),status=document.getElementById('status');
 const W=1200,H=800,CELL=50,COLS=24,ROWS=16,remote=Boolean(API&&KEY);
 // Keep world coordinates at 1200×800, but rasterize at the screen's real pixel density.
-const DPR=Math.min(3,Math.max(1,window.devicePixelRatio||1));
-c.width=Math.round(W*DPR);c.height=Math.round(H*DPR);
-c.style.width=W+'px';c.style.height=H+'px';
-ctx.setTransform(DPR,0,0,DPR,0,0);
-ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';
+c.style.width='100%';c.style.height='100%';
 const headers={'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json'};
 let config=OPT.config||{},tokens=[],scale=1,offsetX=0,offsetY=0,locked=true,measure=false,action=null;
 const fxTool=document.getElementById('fx_tool'),clearFx=document.getElementById('clear_fx');
@@ -112,7 +108,7 @@ function side(t){return Math.max(1,Math.min(4,Number(t.size)||1));}
 function move(t,x,y){t.x=Math.max(0,Math.min(COLS-side(t),x));t.y=Math.max(0,Math.min(ROWS-side(t),y));}
 function select(t){selected=instance(t);tokenSelect.value=t.id;sizeControl.value=side(t);}
 function tokenAt(p){const w=world(p);return [...tokens].reverse().find(t=>w.x>=t.x*CELL&&w.x<(t.x+side(t))*CELL&&w.y>=t.y*CELL&&w.y<(t.y+side(t))*CELL);}
-function renderMap(){setBackground();ctx.setTransform(DPR,0,0,DPR,0,0);ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';ctx.fillStyle='#111827';ctx.fillRect(0,0,W,H);
+function renderMap(){setBackground();ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';ctx.fillStyle='#111827';ctx.fillRect(0,0,W,H);
  if(background&&background.complete&&background.naturalWidth){
   const mode=config.fit||'cover',iw=background.naturalWidth,ih=background.naturalHeight;
   const zoom=Math.max(.25,Math.min(4,Number(config.image_zoom)||1));
@@ -185,7 +181,21 @@ function renderMap(){setBackground();ctx.setTransform(DPR,0,0,DPR,0,0);ctx.image
   ctx.fillStyle='#ffe19c';ctx.fillText(label,mx,my);
  }
 }
-function draw(){c.style.transform='translate('+offsetX+'px,'+offsetY+'px) scale('+scale+')';renderMap();}
+function draw(){
+ const density=window.devicePixelRatio||1;
+ const width=Math.max(1,Math.round(vp.clientWidth*density));
+ const height=Math.max(1,Math.round(vp.clientHeight*density));
+ if(c.width!==width)c.width=width;
+ if(c.height!==height)c.height=height;
+ ctx.setTransform(1,0,0,1,0,0);
+ ctx.clearRect(0,0,width,height);
+ ctx.setTransform(scale*density,0,0,scale*density,offsetX*density,offsetY*density);
+ ctx.save();
+ ctx.beginPath();ctx.rect(0,0,W,H);ctx.clip();
+ renderMap();
+ ctx.restore();
+}
+new ResizeObserver(draw).observe(vp);
 async function save(){dirty=true;lastWrite=Date.now();draw();
  if(!remote){status.textContent='Mapa local';return;}
  try{const r=await fetch(API+'/rest/v1/app_state?on_conflict=key',{method:'POST',
@@ -297,8 +307,8 @@ document.getElementById('measure').onclick=()=>{
  measure=!measure;document.getElementById('measure').classList.toggle('active',measure);
 };
 document.getElementById('reset').onclick=fit;
-document.getElementById('clear').onclick=()=>{if(confirm('Remover todos os tokens?')){tokens=[];save();}};
-clearFx.onclick=()=>{if(confirm('Limpar névoa de guerra e áreas de efeito?')){fog=[];areas=[];saveEffects();fxTool.value='normal';}};
+document.getElementById('clear').onclick=()=>{tokens=[];selected=null;save();};
+clearFx.onclick=()=>{fog=[];areas=[];saveEffects();fxTool.value='normal';};
 loadCatalog();fit();poll();refreshCatalog();
 if(remote){setInterval(poll,1300);setInterval(refreshCatalog,2500);}
 </script></body></html>"""

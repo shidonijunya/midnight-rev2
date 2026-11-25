@@ -62,6 +62,7 @@ h4, h5 {margin:.1rem 0 .35rem 0 !important;padding:0 !important;font-size:.95rem
 .st-key-character-sheet-block .card{background:transparent;border:0;padding:4px}
 .st-key-character-sheet-block .stButton button{min-height:29px!important;padding:2px 5px!important;font-size:.72rem!important;border-radius:6px}
 .st-key-character-sheet-block [data-testid="stVerticalBlock"]{gap:.15rem}
+.action-heading{display:block;line-height:1.3;padding:2px 0 5px;font-size:.74rem;font-weight:700;text-transform:uppercase;color:#b8bacb}
 .st-key-character-sheet-block h5{font-size:.70rem!important;letter-spacing:.025em}
 
 .boss-image-frame img{width:100%;height:100%;object-fit:contain;object-position:center}
@@ -651,14 +652,14 @@ def cb_skill(pid, skill):
 
 
 def render_defense_buttons(pid):
-    st.markdown("##### Defesas")
+    st.markdown('<div class="action-heading">Defesas</div>', unsafe_allow_html=True)
     for label, key in DEFENSES:
         st.button(label, key=f"def_{pid}_{key}", **STRETCH,
                   on_click=cb_defense, args=(pid, key, label))
 
 
 def render_skill_buttons(pid):
-    st.markdown("##### Perícias")
+    st.markdown('<div class="action-heading">Perícias</div>', unsafe_allow_html=True)
     for skill in SKILL_ATTRIBUTES:
         st.button(skill, key=f"skill_{pid}_{skill}", **STRETCH,
                   on_click=cb_skill, args=(pid, skill))

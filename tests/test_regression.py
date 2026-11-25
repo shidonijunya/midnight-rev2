@@ -55,6 +55,17 @@ class TestCoreRules(unittest.TestCase):
         self.assertTrue(verify_password("test-password-muito-longa", encoded))
         self.assertFalse(verify_password("senha-errada", encoded))
 
+    def test_scene_keeps_entire_frame(self):
+        from image_manager import prepare_image
+        for size in ((601, 90), (90, 601)):
+            original = Image.new("RGBA", size, "red")
+            original.putpixel((0, 0), (0, 255, 0, 255))
+            raw = io.BytesIO()
+            original.save(raw, "PNG")
+            with Image.open(io.BytesIO(prepare_image(raw.getvalue(), "scene"))) as result:
+                self.assertEqual(result.size, size)
+                self.assertEqual(result.convert("RGBA").getpixel((0, 0)), (0, 255, 0, 255))
+
     def test_static_image_editor(self):
         from image_manager import prepare_image
         image = Image.new("RGB", (30, 30), (255, 30, 30))

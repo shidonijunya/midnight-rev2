@@ -586,8 +586,11 @@ def sincronizar_recursos_compartilhados():
 def persist_resource(field):
     if not shared_enabled():
         return
-    value = st.session_state.get(field)
+    value = st.session_state.get("edit_" + field)
+    if value is None:
+        return
     if patch_character(PLAYER_ID, {field: value}):
+        st.session_state[field] = value
         snapshot = dict(st.session_state.get("_last_synced_snapshot", {}))
         snapshot[field] = value
         st.session_state["_last_synced_snapshot"] = snapshot
@@ -597,6 +600,8 @@ def persist_resource(field):
 def render_barras():
 
     sincronizar_recursos_compartilhados()
+    for field in ("hp_atual", "mana_atual", "estamina_atual"):
+        st.session_state["edit_" + field] = st.session_state[field]
     atributos = get_atributos_dict()
 
     hp_max, hp_const, hp_fort = calc_hp_max(atributos["Constituição"], atributos["Fortitude"])
@@ -611,7 +616,7 @@ def render_barras():
 
         st.number_input(
             "HP atual", min_value=0, step=1,
-            key="hp_atual", label_visibility="collapsed", on_change=persist_resource, args=("hp_atual",)
+            key="edit_hp_atual", label_visibility="collapsed", on_change=persist_resource, args=("hp_atual",)
         )
 
         pct = (st.session_state["hp_atual"] / hp_max * 100) if hp_max else 0
@@ -632,7 +637,7 @@ def render_barras():
 
         st.number_input(
             "Estamina atual", min_value=0, step=1,
-            key="estamina_atual", label_visibility="collapsed", on_change=persist_resource, args=("estamina_atual",)
+            key="edit_estamina_atual", label_visibility="collapsed", on_change=persist_resource, args=("estamina_atual",)
         )
 
         pct_est = (st.session_state["estamina_atual"] / estamina_max * 100) if estamina_max else 0
@@ -653,7 +658,7 @@ def render_barras():
 
         st.number_input(
             "Mana atual", min_value=0, step=1,
-            key="mana_atual", label_visibility="collapsed", on_change=persist_resource, args=("mana_atual",)
+            key="edit_mana_atual", label_visibility="collapsed", on_change=persist_resource, args=("mana_atual",)
         )
 
         pct_mana = (st.session_state["mana_atual"] / mana_max * 100) if mana_max else 0

@@ -61,6 +61,32 @@ def can_access_character(player_id):
     return role == "mestre" or (role in ROLE_SLOT and ROLE_SLOT[role] == player_id)
 
 
+REFILL_MARKER = "_recarga_solicitada_2026_11_25"
+
+
+def refill_once(client, player_id, row):
+    from game_rules import calc_hp_max, calc_mana_max, calc_estamina_max
+    for _ in range(5):
+        data = row["data"]
+        if REFILL_MARKER in data:
+            return row
+        def attr(name):
+            return int(data["attr_" + name])
+        restored = dict(data)
+        restored.update(hp_atual=calc_hp_max(attr("Constituição"), attr("Fortitude"))[0],
+                        mana_atual=calc_mana_max(attr("Carisma"), attr("Sabedoria"), attr("Inteligência")),
+                        estamina_atual=calc_estamina_max(attr("Fortitude"), attr("Força"), attr("Destreza")))
+        restored[REFILL_MARKER] = True
+        stamp = datetime.now(timezone.utc).isoformat()
+        result = (client.table("characters").update({"data": restored, "updated_at": stamp})
+                  .eq("player_id", player_id).eq("updated_at", row["updated_at"]).execute())
+        if result.data:
+            return {"data": restored, "updated_at": stamp}
+        row = (client.table("characters").select("data,updated_at")
+               .eq("player_id", player_id).limit(1).execute()).data[0]
+    raise RuntimeError("Recarregue a ficha para concluir a recarga inicial.")
+
+
 def fetch_character(player_id):
     """Return explicit status so a transient outage cannot look like a new character.
 
@@ -72,14 +98,17 @@ def fetch_character(player_id):
     if client is None:
         return {"status": "error", "data": None}
     try:
-        result = (client.table("characters").select("data")
+        result = (client.table("characters").select("data,updated_at")
                   .eq("player_id", player_id).limit(1).execute())
         rows = result.data or []
         if not rows:
             return {"status": "missing", "data": None}
         if not isinstance(rows[0].get("data"), dict):
             return {"status": "error", "data": None}
-        return {"status": "found", "data": rows[0]["data"]}
+        row = rows[0]
+        if player_id in ROLE_SLOT and REFILL_MARKER not in row["data"]:
+            row = refill_once(client, player_id, row)
+        return {"status": "found", "data": row["data"]}
     except Exception as exc:
         st.error(f"Falha ao carregar a ficha compartilhada ({player_id}): {_safe_error(exc)}")
         return {"status": "error", "data": None}
@@ -152,7 +181,7 @@ def change_resources_atomic(player_id, deltas, attempts=7):
                       .update({"data": fresh, "updated_at": stamped})
                       .eq("player_id", player_id)
                       .eq("updated_at", previous["updated_at"])
-                      .select("player_id").execute())
+                      .execute())
             if result.data:
                 _archive_snapshot(player_id, previous.get("data") or {}, "resources")
                 return True, fresh, None
@@ -249,23 +278,9 @@ def restore_character_version(player_id, history_index):
 
 
 def save_character(player_id, data):
-    if auth_configured() and not can_access_character(player_id):
-        return False
-    client = get_client()
-    if client is None:
-        return False
-    try:
-        client.table("characters").upsert({
-            "player_id": player_id,
-            "data": data,
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-        }, on_conflict="player_id").execute()
-        if previous["status"] == "found" and previous["data"] != data:
-            _archive_snapshot(player_id, previous["data"], "full_save")
-        return True
-    except Exception as exc:
-        st.error(f"Falha ao salvar a ficha compartilhada ({player_id}): {_safe_error(exc)}")
-        return False
+    """A full sheet snapshot cannot authorize a resource edit."""
+    protected = {"hp_atual", "mana_atual", "estamina_atual", REFILL_MARKER}
+    return patch_character(player_id, {k: v for k, v in data.items() if k not in protected})
 
 
 def patch_character(player_id, changes, attempts=5):
@@ -293,7 +308,7 @@ def patch_character(player_id, changes, attempts=5):
                       .update({"data": merged, "updated_at": updated})
                       .eq("player_id", player_id)
                       .eq("updated_at", stored["updated_at"])
-                      .select("player_id").execute())
+                      .execute())
             if result.data:
                 _archive_snapshot(player_id, stored.get("data") or {}, "edit")
                 return True

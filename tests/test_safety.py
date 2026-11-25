@@ -82,6 +82,21 @@ class SafetyTests(unittest.TestCase):
         self.assertEqual(data["estamina_atual"], 50)
         self.assertEqual(fake.row["data"]["estamina_atual"], 50)
 
+    def test_one_time_refill_and_alternating_sheet_panel_edits(self):
+        fake = FakeClient()
+        for name, value in zip(("Força", "Destreza", "Constituição", "Inteligência", "Sabedoria", "Carisma", "Fortitude"),
+                               (20, 15, 20, 29, 12, 11, 15)):
+            fake.row["data"]["attr_" + name] = value
+        with patch.object(shared_backend, "get_client", return_value=fake):
+            read = lambda: shared_backend.load_character("jogador_2")
+            full = read()
+            self.assertEqual([full[k] for k in ("hp_atual", "mana_atual", "estamina_atual")], [120, 106, 111])
+            for field, value in (("mana_atual", 0), ("hp_atual", 17), ("estamina_atual", 33)):
+                self.assertTrue(shared_backend.patch_character("jogador_2", {field: value}))
+                self.assertEqual(read()[field], value)
+            self.assertEqual(read()["mana_atual"], 0)
+            self.assertEqual(fake.updates, 4)
+
     def test_insufficient_resources_does_not_overdraw(self):
         fake = FakeClient()
         with patch.object(shared_backend, "get_client", return_value=fake):

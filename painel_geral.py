@@ -245,7 +245,9 @@ def cb_save_resources(pid, field, widget_key):
     if not data:
         ss["notice"] = {"level": "error", "text": "Ficha não encontrada."}
         return
-    data[field] = max(0, num(ss.get(widget_key)))
+    if ss.get(widget_key) is None:
+        return
+    data[field] = max(0, int(ss[widget_key]))
     if patch_character(pid, {field: data[field]}):
         ss[f"resource_snapshot_{pid}_{field}"] = data[field]
     else:
@@ -514,8 +516,8 @@ def resource_editor(pid):
     cols = st.columns(3)
     for col, (field, label) in zip(cols, (("hp_atual", "HP"), ("mana_atual", "Mana"), ("estamina_atual", "Estamina"))):
         key = f"resource_{pid}_{field}"
-        current = max(0, num(data.get(field), 0))
-        if ss.get(f"resource_snapshot_{pid}_{field}") != current:
+        current = resources(data)[{"hp_atual": 0, "mana_atual": 2, "estamina_atual": 4}[field]]
+        if ss.get(key) != current:
             ss[key] = current
             ss[f"resource_snapshot_{pid}_{field}"] = current
         col.number_input(label, min_value=0, step=1, key=key,

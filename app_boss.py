@@ -909,27 +909,32 @@ def render_combat_main(bosses: dict):
         hp = st.number_input("HP atual", min_value=0, max_value=boss.max_hp,
                              step=1, key=hp_key)
         state.boss_hp[name] = hp
-        st.progress(hp / boss.max_hp, text=f"{hp} / {boss.max_hp} HP")
+        bars = state.boss_gauges[name]
+        for key, label in LABELS.items():
+            entry = bars[key]
+            widget_key = f"combat_{key}_{name}_{entry['min']}_{entry['max']}"
+            entry["value"] = st.number_input(
+                label, min_value=entry["min"], max_value=entry["max"],
+                value=entry["value"], step=1, key=widget_key,
+            )
+        render_gauges(hp, boss.max_hp, bars)
         phase_number = boss.get_current_phase_index(hp) + 1
         phase = boss.ensure_phases()[phase_number - 1]
         st.markdown(f"**Fase {phase_number}**" + (f" · {phase.label}" if phase.label else ""))
-        bars = state.boss_gauges[name]
-        render_gauges(bars)
-        with st.popover("Ajustar barras"):
+        with st.popover("Limites das barras"):
             for key, label in LABELS.items():
                 entry = bars[key]
-                with st.form(f"gauge_{name}_{key}"):
+                with st.form(f"limits_{name}_{key}"):
                     st.markdown(f"**{label}**")
-                    fields = st.columns(3)
-                    values = {field: col.number_input(title, value=entry[field], step=1)
-                              for col, (field, title) in zip(fields, (("min", "Mínimo"), ("value", "Atual"), ("max", "Máximo")))}
+                    left, right = st.columns(2)
+                    low = left.number_input("Mínimo", value=entry["min"], step=1)
+                    high = right.number_input("Máximo", value=entry["max"], step=1)
                     if st.form_submit_button("Aplicar"):
-                        try:
-                            validated = gauges({key: values})
-                        except ValueError as exc:
-                            st.error(str(exc))
+                        if low >= high:
+                            st.error("O máximo precisa ser maior que o mínimo.")
                         else:
-                            bars[key] = validated[key]
+                            bars[key] = {"min": low, "max": high,
+                                         "value": max(low, min(high, entry["value"]))}
                             finish_boss_run(bosses)
                             st.rerun()
 

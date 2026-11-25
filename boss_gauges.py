@@ -25,16 +25,27 @@ def gauges(raw=None):
     return result
 
 
-def render_gauges(raw):
-    for key, entry in gauges(raw).items():
-        low, high, value = entry["min"], entry["max"], entry["value"]
-        width = 100 * (value - low) / (high - low)
-        color = "#823147" if key == "bleed" else "#97783f"
-        st.markdown(
-            f'<div style="font-size:.78rem;font-weight:650">{LABELS[key]} · {value} / {high}</div>'
-            f'<div role="meter" aria-label="{LABELS[key]}" aria-valuemin="{low}" '
-            f'aria-valuemax="{high}" aria-valuenow="{value}" style="height:9px;background:#25252d;'
-            f'border:1px solid #49434a;border-radius:3px;overflow:hidden;display:flex;justify-content:center">'
-            f'<div style="height:100%;width:{width:.2f}%;background:{color}"></div></div>',
-            unsafe_allow_html=True,
+def render_gauges(hp, max_hp, raw):
+    palette = {"HP": ("#731522", "#ed3444"),
+               "Sangramento": ("#571e30", "#963951"),
+               "Postura": ("#66512d", "#aa884a")}
+    readings = [("HP", 0, max_hp, hp)]
+    for key, meter in gauges(raw).items():
+        readings.append((LABELS[key], meter["min"], meter["max"], meter["value"]))
+
+    tracks = []
+    for label, low, high, value in readings:
+        width = max(0, min(100, 100 * (value - low) / (high - low)))
+        dark, light = palette[label]
+        alignment = "flex-start" if label == "HP" else "center"
+        gradient = f"{dark},{light}" if label == "HP" else f"{dark},{light},{dark}"
+        tracks.append(
+            f'<div role="meter" aria-label="{label}" aria-valuemin="{low}" '
+            f'aria-valuemax="{high}" aria-valuenow="{value}" style="box-sizing:border-box;'
+            f'width:100%;height:16px;border-radius:9px;border:1px solid #50424a;'
+            f'background:#262229;overflow:hidden;display:flex;justify-content:{alignment}">'
+            f'<div style="width:{width:.3f}%;height:100%;border-radius:inherit;'
+            f'background:linear-gradient(90deg,{gradient})"></div></div>'
         )
+    st.markdown('<div style="display:grid;gap:6px;width:100%">' + "".join(tracks) + '</div>',
+                unsafe_allow_html=True)

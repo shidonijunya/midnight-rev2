@@ -71,7 +71,7 @@ h4, h5 {margin:.1rem 0 .35rem 0 !important;padding:0 !important;font-size:.95rem
 .scene-image-frame img{width:100%;height:100%;object-fit:contain}
 @media(max-width:1000px){.scene-image-frame{height:390px}}
 
-.boss-chat-attack{border:1px solid #826947;border-left:4px solid #96764c;background:#251f21;color:#ead7b6;border-radius:5px;padding:8px 12px;margin-bottom:6px;font-family:Georgia,serif;font-size:1rem}.boss-bar{height:18px;border-radius:12px;background:#292025;overflow:hidden;border:1px solid #5c2930}.boss-bar div{height:100%;background:linear-gradient(90deg,#731522,#ed3444);transition:width .4s}
+.boss-chat-attack{border:1px solid #826947;border-left:4px solid #96764c;background:#251f21;color:#ead7b6;border-radius:5px;padding:8px 12px;margin-bottom:6px;font-family:Georgia,serif;font-size:1rem}
 .boss-empty{min-height:180px;border:1px solid #282b34;border-radius:14px;background:#121318}
 div[data-testid="stButton"] button[kind="primary"] {background:#971f2d;border-color:#971f2d;color:white}
 .chat-head {display:flex;justify-content:space-between;font-size:.72rem;color:#9a9db0;margin-bottom:2px}
@@ -623,8 +623,7 @@ def boss_panel():
         name = html.escape(str(display["boss_name"]))
         st.markdown(f'<div class="boss-name">{name}</div>', unsafe_allow_html=True)
         hp, hpmax = max(0, num(display.get("boss_hp"))), max(1, num(display.get("boss_max_hp"), 1))
-        st.markdown(f'<div class="boss-bar"><div style="width:{min(100, hp / hpmax * 100):.2f}%"></div></div>', unsafe_allow_html=True)
-        render_gauges(display.get("gauges"))
+        render_gauges(hp, hpmax, display.get("gauges"))
     else:
         st.markdown('<div class="boss-image-frame"></div>', unsafe_allow_html=True)
 

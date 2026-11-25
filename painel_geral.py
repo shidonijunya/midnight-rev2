@@ -1,4 +1,5 @@
 """Painel da mesa: ficha à esquerda; rolador 3D e chat à direita."""
+from boss_gauges import render_gauges
 import html
 import inspect
 import math
@@ -70,7 +71,7 @@ h4, h5 {margin:.1rem 0 .35rem 0 !important;padding:0 !important;font-size:.95rem
 .scene-image-frame img{width:100%;height:100%;object-fit:contain}
 @media(max-width:1000px){.scene-image-frame{height:390px}}
 
-.boss-bar{height:18px;border-radius:12px;background:#292025;overflow:hidden;border:1px solid #5c2930}.boss-bar div{height:100%;background:linear-gradient(90deg,#731522,#ed3444);transition:width .4s}
+.boss-chat-attack{border:1px solid #826947;border-left:4px solid #96764c;background:#251f21;color:#ead7b6;border-radius:5px;padding:8px 12px;margin-bottom:6px;font-family:Georgia,serif;font-size:1rem}.boss-bar{height:18px;border-radius:12px;background:#292025;overflow:hidden;border:1px solid #5c2930}.boss-bar div{height:100%;background:linear-gradient(90deg,#731522,#ed3444);transition:width .4s}
 .boss-empty{min-height:180px;border:1px solid #282b34;border-radius:14px;background:#121318}
 div[data-testid="stButton"] button[kind="primary"] {background:#971f2d;border-color:#971f2d;color:white}
 .chat-head {display:flex;justify-content:space-between;font-size:.72rem;color:#9a9db0;margin-bottom:2px}
@@ -456,6 +457,9 @@ def message_html(msg):
     data = msg.get("data") or {}
     who = html.escape(str(msg.get("author") or "Mesa"))
     when = format_time(msg.get("created_at"))
+    if typ == "attack" and data.get("boss_attack"):
+        label = "Área" if data.get("type") == "area" else "Físico"
+        return f'<div class="boss-chat-attack">{label} <strong>· {num(data.get("damage"))} de dano</strong></div>'
     if typ == "image":
         url = html.escape(str(data.get("url") or ""), quote=True)
         return f'<div class="chat-card"><div class="chat-head"><b>{who}</b><span>{when}</span></div><img src="{url}" style="max-width:100%;max-height:280px;object-fit:contain;border-radius:8px"></div>'
@@ -620,6 +624,7 @@ def boss_panel():
         st.markdown(f'<div class="boss-name">{name}</div>', unsafe_allow_html=True)
         hp, hpmax = max(0, num(display.get("boss_hp"))), max(1, num(display.get("boss_max_hp"), 1))
         st.markdown(f'<div class="boss-bar"><div style="width:{min(100, hp / hpmax * 100):.2f}%"></div></div>', unsafe_allow_html=True)
+        render_gauges(display.get("gauges"))
     else:
         st.markdown('<div class="boss-image-frame"></div>', unsafe_allow_html=True)
 
@@ -782,7 +787,7 @@ def chat_composer():
 def shared_animation():
     """Every connected panel fetches recent rolls for a shared dice stage."""
     messages = get_chat_messages(20)
-    rolls = [m for m in messages if m.get("message_type") in ("dice", "attack", "defense")]
+    rolls = [m for m in messages if m.get("message_type") in ("dice", "attack", "defense") and not (m.get("data") or {}).get("boss_attack")]
     if rolls:
         latest = rolls[-1]
         data = latest.get("data") or {}

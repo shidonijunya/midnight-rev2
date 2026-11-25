@@ -6,6 +6,9 @@ from dataclasses import dataclass, asdict, field
 from typing import List, Optional
 
 import streamlit as st
+from boss_narration import DESCRIPTIONS
+from boss_gauges import LABELS, gauges, render_gauges
+from shared_backend import publish_roll
 from boss_runtime import hydrate_runtime, persist_runtime
 from shared_backend import (
     compare_and_set_app_state, create_app_state_if_missing, fetch_app_state,
@@ -114,6 +117,8 @@ class Attack:
     effect_dice_count: Optional[int] = None
     effect_dice_sides: Optional[int] = None
 
+    description: str = ""
+
     def execute(self):
 
         natural_roll = DiceRoller.roll_d20()
@@ -206,6 +211,8 @@ class Boss:
     action_matrix: dict  # chave = str(attack.id) -> [5 valores]
     phases: List[Phase] = field(default_factory=list)
 
+    gauges: dict = field(default_factory=gauges)
+
     def get_physical_attacks(self):
         return [a for a in self.attacks if a.type == "physical"]
 
@@ -231,7 +238,7 @@ class Boss:
 
         phases = self.ensure_phases()
 
-        hp_percentage = (current_hp / self.max_hp * 100) if self.max_hp else 0
+        hp_percentage = (100 * current_hp // self.max_hp) if self.max_hp else 0
 
         # Ordena da fase de maior HP para a de menor HP
         ordered = sorted(
@@ -262,10 +269,10 @@ class Boss:
         ]
 
         # Rede de segurança: nunca deixar o combo sem opções
-        if not physical:
-            physical = self.get_physical_attacks() or self.attacks
-        if not area:
-            area = self.get_area_attacks() or self.attacks
+        if not physical and not area:
+            return [], []
+        physical = physical or area
+        area = area or physical
 
         return physical, area
 
@@ -277,6 +284,8 @@ class Boss:
         phase = self.get_current_phase(current_hp)
         physical, area = self.get_available_attacks_for_phase(phase)
 
+        if not physical and not area:
+            return []
         roll = random.random()
 
         if roll < 0.60:
@@ -303,7 +312,10 @@ class Boss:
 # ============================================================
 
 def attack_to_dict(attack: Attack) -> dict:
-    return asdict(attack)
+    data = asdict(attack)
+    data["description"] = attack.description or legacy_description(attack)
+    data.pop("effect_name", None)
+    return data
 
 
 def dict_to_attack(data: dict) -> Attack:
@@ -318,7 +330,8 @@ def dict_to_attack(data: dict) -> Attack:
         damage_dice_count=int(data["damage_dice_count"]),
         damage_dice_sides=int(data["damage_dice_sides"]),
         damage_bonus=int(data["damage_bonus"]),
-        effect_name=data.get("effect_name") or "Nenhum",
+        description=str(data.get("description") or "").strip(),
+        effect_name="Efeito",
         effect_dice_count=(
             int(data["effect_dice_count"])
             if data.get("effect_dice_count") not in (None, "")
@@ -350,6 +363,7 @@ def boss_to_dict(boss: Boss) -> dict:
     return {
         "name": boss.name,
         "max_hp": boss.max_hp,
+        "gauges": boss.gauges,
         "attacks": [attack_to_dict(a) for a in boss.attacks],
         "action_matrix": boss.action_matrix,
         "phases": [phase_to_dict(p) for p in boss.ensure_phases()],
@@ -371,6 +385,7 @@ def dict_to_boss(data: dict) -> Boss:
     return Boss(
         name=data["name"],
         max_hp=int(data["max_hp"]),
+        gauges=gauges(data.get("gauges")),
         attacks=attacks,
         action_matrix={
             str(k): list(v) for k, v in data["action_matrix"].items()
@@ -705,7 +720,7 @@ def init_session_state(bosses: dict):
 
     dict_fields = [
         "boss_hp", "turn_numbers", "histories",
-        "current_turns", "statuses"
+        "current_turns", "statuses", "boss_gauges"
     ]
 
     for field in dict_fields:
@@ -723,6 +738,7 @@ def init_session_state(bosses: dict):
         st.session_state.histories.setdefault(name, [])
         st.session_state.current_turns.setdefault(name, None)
         st.session_state.statuses.setdefault(name, [])
+        st.session_state.boss_gauges.setdefault(name, gauges(boss.gauges))
 
     # Remove entradas de bosses que não existem mais
     for field in dict_fields:
@@ -755,7 +771,7 @@ def init_session_state(bosses: dict):
 def rename_boss_state(old_name, new_name):
     """Migra HP/turnos/histórico/status de um nome de boss para outro."""
 
-    for field in ["boss_hp", "turn_numbers", "histories", "current_turns", "statuses"]:
+    for field in ["boss_hp", "turn_numbers", "histories", "current_turns", "statuses", "boss_gauges"]:
         state_dict = st.session_state[field]
         if old_name in state_dict:
             state_dict[new_name] = state_dict.pop(old_name)
@@ -770,7 +786,7 @@ def init_boss_state(name, max_hp, hp_atual):
 
 
 def delete_boss_state(name):
-    for field in ["boss_hp", "turn_numbers", "histories", "current_turns", "statuses"]:
+    for field in ["boss_hp", "turn_numbers", "histories", "current_turns", "statuses", "boss_gauges"]:
         st.session_state[field].pop(name, None)
 
 
@@ -807,6 +823,14 @@ def matrix_color(value):
     return "matrix-red"
 
 
+def legacy_description(attack):
+    if attack.name in DESCRIPTIONS:
+        return DESCRIPTIONS[attack.name]
+    if attack.type == "area":
+        return "O chefe abre os braços. Uma onda se espalha pelo chão ao redor dele."
+    return "O chefe encurta a distância e desfere um golpe contra o alvo."
+
+
 def render_attack_result(attack: Attack, result: dict, number=None):
     kind = "Físico" if attack.type == "physical" else "Área"
     title = f"{number}. {attack.name}" if number is not None else attack.name
@@ -814,13 +838,18 @@ def render_attack_result(attack: Attack, result: dict, number=None):
         f' · <span class="critical">Crítico ×{attack.crit_multiplier}</span>'
         if result["is_critical"] else ""
     )
-    effect = ""
-    if attack.type == "area" or attack.effect_dice_count or result["effect_value"]:
-        effect = f'<div><dt>{escape(attack.effect_name)}</dt><dd>{int(result["effect_value"])}</dd></div>'
+    effect = f'<div><dt>Efeito</dt><dd>{int(result["effect_value"])}</dd></div>'
     dice = f"{attack.damage_dice_count}d{attack.damage_dice_sides}{attack.damage_bonus:+d}"
-    st.markdown(
+    body, send = st.columns([5, 1], vertical_alignment="center")
+    if send.button("Publicar", key=f"send_{st.session_state.selected_boss}_{number}_{attack.id}",
+                   help="Enviar tipo e dano final ao chat da mesa"):
+        if publish_roll("attack", {"boss_attack": True, "type": attack.type,
+                                   "damage": int(result["final_damage"])}, "Chefe"):
+            st.toast("Ataque publicado.")
+    body.markdown(
         f'<article class="boss-result">'
         f'<h4>{escape(title)} <span class="attack-kind">{kind}</span>{critical}</h4>'
+        f'<p>{escape(attack.description or legacy_description(attack))}</p>'
         f'<dl><div><dt>Ataque</dt><dd>{int(result["attack_result"])}</dd></div>'
         f'<div><dt>Dano final</dt><dd>{int(result["final_damage"])}</dd></div>{effect}</dl>'
         f'<p class="roll-detail">d20 {int(result["natural_roll"])} ({attack.attack_bonus:+d})'
@@ -832,7 +861,7 @@ def render_attack_result(attack: Attack, result: dict, number=None):
 def render_matrix(boss: Boss):
     headers = "".join(f'<th scope="col">{escape(label)}</th>' for label in MATRIX_COLUMNS)
     rows = []
-    for attack in boss.attacks:
+    for attack in boss.get_area_attacks():
         values = "".join(
             f'<td class="{matrix_color(value)}">{value}</td>'
             for value in boss.get_matrix_row(attack.id)
@@ -845,15 +874,6 @@ def render_matrix(boss: Boss):
         unsafe_allow_html=True,
     )
     st.caption("10–16 · dificuldade menor  |  17–23 · média  |  24–30 · maior")
-
-
-def reset_encounter(boss: Boss):
-    state = st.session_state
-    clear_encounter_history(boss.name)
-    state.boss_hp[boss.name] = boss.max_hp
-    state.statuses[boss.name] = []
-    state.manual_result = None
-    state.pop("encounter_history_turn", None)
 
 
 def clear_encounter_history(name):
@@ -881,10 +901,6 @@ def render_combat_main(bosses: dict):
         state.pop("encounter_history_turn", None)
     boss = bosses[selected]
     name = boss.name
-    if state.pop(f"reset_controls_{name}", False):
-        state.pop(f"combat_status_{name}", None)
-        state.pop(f"combat_hp_{name}", None)
-
     overview, battle = st.columns([1, 1.8], gap="medium")
     with overview, st.container(border=True, key="boss-overview"):
         hp_key = f"combat_hp_{name}"
@@ -897,25 +913,25 @@ def render_combat_main(bosses: dict):
         phase_number = boss.get_current_phase_index(hp) + 1
         phase = boss.ensure_phases()[phase_number - 1]
         st.markdown(f"**Fase {phase_number}**" + (f" · {phase.label}" if phase.label else ""))
-        conditions = state.statuses[name]
-        state.statuses[name] = st.multiselect(
-            "Condições do chefe", list(dict.fromkeys(STATUS_OPTIONS + conditions)),
-            default=conditions, key=f"combat_status_{name}",
-        )
-        with st.popover("Ataques da fase"):
-            physical = [attack for attack in boss.get_physical_attacks() if attack.id in phase.physical_ids]
-            area = [attack for attack in boss.get_area_attacks() if attack.id in phase.area_ids]
-            st.markdown("**Físicos**")
-            st.write(", ".join(attack.name for attack in physical) or "—")
-            st.markdown("**Em área**")
-            st.write(", ".join(attack.name for attack in area) or "—")
-        with st.popover("Reiniciar combate"):
-            st.caption("Restaure o HP máximo e apague os turnos e as condições deste chefe.")
-            if st.button("Confirmar reinício", key=f"reset_{name}"):
-                reset_encounter(boss)
-                state[f"reset_controls_{name}"] = True
-                finish_boss_run(bosses)
-                st.rerun()
+        bars = state.boss_gauges[name]
+        render_gauges(bars)
+        with st.popover("Ajustar barras"):
+            for key, label in LABELS.items():
+                entry = bars[key]
+                with st.form(f"gauge_{name}_{key}"):
+                    st.markdown(f"**{label}**")
+                    fields = st.columns(3)
+                    values = {field: col.number_input(title, value=entry[field], step=1)
+                              for col, (field, title) in zip(fields, (("min", "Mínimo"), ("value", "Atual"), ("max", "Máximo")))}
+                    if st.form_submit_button("Aplicar"):
+                        try:
+                            validated = gauges({key: values})
+                        except ValueError as exc:
+                            st.error(str(exc))
+                        else:
+                            bars[key] = validated[key]
+                            finish_boss_run(bosses)
+                            st.rerun()
 
     with battle:
         with st.container(border=True, key="boss-actions"):
@@ -972,7 +988,7 @@ def render_combat_main(bosses: dict):
 
 def render_turn(turn):
     if not turn["results"]:
-        st.caption("Este turno ficou sem ataques disponíveis na biblioteca.")
+        st.caption("Esta fase não tem ataques liberados.")
         return
     with st.container(border=True):
         for number, item in enumerate(turn["results"], start=1):
@@ -1230,11 +1246,8 @@ def render_boss_editor_form(bosses: dict):
                         value=int(template.damage_bonus), step=1, key=f"{a_key}_dbonus"
                     )
 
-                effect_name = st.text_input(
-                    "Nome do efeito (use 'Nenhum' se não houver)",
-                    value=template.effect_name,
-                    key=f"{a_key}_effname"
-                )
+                description = st.text_area("Narração curta do ataque", value=template.description or legacy_description(template),
+                                           key=f"{a_key}_description")
 
                 effect_dice_count = None
                 effect_dice_sides = None
@@ -1280,7 +1293,7 @@ def render_boss_editor_form(bosses: dict):
                     damage_dice_count=int(damage_dice_count),
                     damage_dice_sides=int(damage_dice_sides),
                     damage_bonus=int(damage_bonus),
-                    effect_name=effect_name.strip() or "Nenhum",
+                    effect_name="Efeito", description=description.strip(),
                     effect_dice_count=int(effect_dice_count) if effect_dice_count else None,
                     effect_dice_sides=int(effect_dice_sides) if effect_dice_sides else None,
                 ))
@@ -1371,14 +1384,14 @@ def render_boss_editor_form(bosses: dict):
 
     with tab_matriz:
 
-        st.caption(f"{len(attack_values)} ataques × 5 defesas. Verde 10–16, amarelo 17–23, vermelho 24–30.")
+        st.caption(f"{len(area_in_editor)} ataques em área × 5 defesas. Verde 10–16, amarelo 17–23, vermelho 24–30.")
 
         header_cols = st.columns([2.2, 1, 1, 1, 1, 1])
         for col, header in zip(header_cols, ["Ataque"] + MATRIX_COLUMNS):
             with col:
                 st.markdown(f"**{header}**")
 
-        for atk in attack_values:
+        for atk in area_in_editor:
 
             row = default_matrix.get(str(atk.id), [15, 15, 15, 15, 15])
             row_cols = st.columns([2.2, 1, 1, 1, 1, 1])
@@ -1430,6 +1443,7 @@ def render_boss_editor_form(bosses: dict):
             attacks=attack_values,
             action_matrix=matrix_values,
             phases=phase_values,
+            gauges=source_boss.gauges if source_boss else gauges(),
         )
 
         updated = dict(bosses)
@@ -1503,6 +1517,8 @@ def boss_from_import_json(data: dict) -> Boss:
             raise ValueError(f"Ataque {index} não é um objeto JSON.")
 
         attack_data = dict(raw)
+        if "id" in attack_data and attack_data["id"] != index:
+            raise ValueError(f"Ataque {index}: o ID precisa corresponder à posição na lista.")
         attack_data["id"] = index
 
         try:
@@ -1639,7 +1655,8 @@ def boss_from_import_json(data: dict) -> Boss:
         name=name,
         max_hp=max_hp,
         attacks=attacks,
-        action_matrix=matrix,
+        action_matrix={str(a.id): matrix[str(a.id)] for a in attacks if a.type == "area"},
+        gauges=gauges(data.get("gauges")),
         phases=phases,
     )
 
@@ -1650,6 +1667,25 @@ def render_json_import(bosses: dict):
             "Cole um JSON ou envie um arquivo .json. É possível importar um boss "
             "ou vários no formato {\"Nome\": {...}, \"Outro\": {...}}."
         )
+
+        st.caption("Instruções para copiar e enviar ao chatbot junto com o conceito do chefe.")
+        st.code("""Crie um chefe para o RPG Midnight Sun. Responda somente com JSON válido para importar.
+Use name, max_hp, gauges, attacks, phases e action_matrix.
+Em gauges, configure bleed (sangramento) e posture (postura), cada um com min, max e value inicial.
+Em attacks, a posição na lista define o ID, começando em 1. Use de 1 a 20 ataques.
+Para cada ataque, escreva name e description. A descrição deve ter uma ou duas frases em português,
+prontas para o mestre ler em voz alta. Descreva o movimento, a direção e, quando for em área,
+como a área se manifesta. Evite floreios no nome. Não anuncie dano, acerto ou condição na narração.
+Use type physical ou area, attack_bonus, crit_min, crit_max, crit_multiplier,
+damage_dice_count, damage_dice_sides e damage_bonus. Para efeito físico use effect_dice_count
+e effect_dice_sides, ou null nos dois. Em área, o efeito é metade do dano final, arredondado para baixo.
+O efeito é apenas um número e o mestre decide sua aplicação.
+Inclua exatamente três fases com label, hp_min e hp_max (percentuais inteiros),
+physical_ids e area_ids. Cubra todo o intervalo de 0 a 100, sem lacunas ou sobreposição,
+por exemplo 61–100, 31–60 e 0–30. Cada fase precisa liberar ao menos um ataque.
+Em action_matrix, use apenas IDs de área como chaves e cinco inteiros de 10 a 30 por ataque,
+na ordem Parry, Rolagem, Bloquear, Pular e Correr.
+Exemplo de barras: "gauges":{"bleed":{"min":0,"max":100,"value":0},"posture":{"min":0,"max":120,"value":0}}.""", language=None)
 
         uploaded_file = st.file_uploader(
             "Arquivo .json", type=["json"], key="import_json_file"
@@ -1773,6 +1809,7 @@ def render_json_import(bosses: dict):
                     new_boss.name, new_boss.max_hp, new_boss.max_hp
                 )
 
+            st.session_state.boss_gauges[new_boss.name] = gauges(new_boss.gauges)
             bosses[new_boss.name] = new_boss
 
         last_imported_name = imported[-1][0].name
@@ -1802,40 +1839,7 @@ def render_shared_display_controls():
         st.error("Não foi possível carregar a cena publicada.")
         return
     config = dict(record["data"])
-    display = dict(config.get("display") or {})
-    name = st.session_state.selected_boss
-    image = (display.get("boss_images") or {}).get(name)
-    scene, tokens = st.columns([1.4, 1], gap="medium")
-    with scene, st.container(border=True):
-        st.subheader("Exibição no painel")
-        st.caption(f"Chefe selecionado · {name}")
-        if image:
-            st.image(image, width=160)
-        with st.form("publish_boss_scene"):
-            mode = st.radio("Modo", ["Chefe", "Cena narrativa"], horizontal=True,
-                            index=0 if display.get("mode", "Chefe") == "Chefe" else 1)
-            scene_name = st.text_input("Nome da cena", value=display.get("scene_name", "Cena atual"))
-            show_scene = st.checkbox("Exibir imagem da cena", value=display.get("show_scene", True))
-            portrait = st.file_uploader("Retrato deste chefe", type=["png", "jpg", "jpeg", "webp"],
-                                        key=f"scene_portrait_{name}")
-            if st.form_submit_button("Publicar no painel", type="primary"):
-                if portrait:
-                    from uuid import uuid4
-                    suffix = portrait.name.rsplit(".", 1)[-1].lower()
-                    url = upload_asset(f"bosses/portraits/{uuid4().hex}.{suffix}",
-                                       portrait.getvalue(), portrait.type)
-                    if not url:
-                        st.error("Não foi possível enviar o retrato.")
-                        return
-                    display["boss_images"] = {**(display.get("boss_images") or {}), name: url}
-                display.update(mode=mode, scene_name=scene_name, show_scene=show_scene)
-                config["display"] = display
-                if compare_and_set_app_state("boss_config", record["updated_at"], config):
-                    st.session_state["_boss_display_changed"] = True
-                else:
-                    st.error("A configuração mudou em outra sessão. Tente publicar novamente.")
-
-    with tokens, st.container(border=True):
+    with st.container(border=True):
         st.subheader("Tokens de inimigos")
         slot = st.selectbox("Token", range(1, 6), format_func=lambda n: f"Mob {n}")
         token_id = f"mob_{slot}"
@@ -1876,7 +1880,7 @@ def publish_current_boss(bosses: dict):
     previous = current_record["data"] or {}
     hp = st.session_state.boss_hp[name]
     values = {
-        "mode": display.get("mode", "Chefe"),
+        "mode": "Chefe",
         "scene_name": display.get("scene_name", "Cena atual"),
         "show_scene": display.get("show_scene", True),
         "scene_image_url": previous.get("scene_image_url", display.get("scene_image_url", "")),
@@ -1884,6 +1888,7 @@ def publish_current_boss(bosses: dict):
         "boss_image_url": (display.get("boss_images") or {}).get(name, ""),
         "boss_hp": max(0, min(int(hp), int(boss.max_hp))),
         "boss_max_hp": int(boss.max_hp),
+        "gauges": st.session_state.boss_gauges.get(name, boss.gauges),
     }
     if all(previous.get(key) == value for key, value in values.items()):
         return True

@@ -3,6 +3,8 @@
 O contrato persiste apenas dados simples (IDs de ataques e resultados);
 a sessão reconstrói objetos Attack usando a biblioteca de bosses já carregada.
 """
+from copy import deepcopy
+
 from shared_backend import (
     load_app_state_record, create_app_state_if_missing, compare_and_set_app_state,
 )
@@ -41,6 +43,7 @@ def pack_runtime(bosses, state):
         history = state.get("histories", {}).get(name, []) or []
         snapshot["bosses"][name] = {
             "hp": max(0, min(int(state.get("boss_hp", {}).get(name, boss.max_hp)), boss.max_hp)),
+            "gauges": deepcopy(state.get("boss_gauges", {}).get(name, getattr(boss, "gauges", {}))),
             "turn": int(state.get("turn_numbers", {}).get(name, 0)),
             "current": _turn_to_data(state.get("current_turns", {}).get(name)),
             "history": [_turn_to_data(t) for t in history[:100]],
@@ -67,6 +70,9 @@ def apply_runtime(bosses, state, snapshot):
             continue
         boss = bosses[name]
         state["boss_hp"][name] = max(0, min(int(values.get("hp", boss.max_hp)), boss.max_hp))
+        if values.get("gauges"):
+            from boss_gauges import gauges
+            state.setdefault("boss_gauges", {})[name] = gauges(values["gauges"])
         state["turn_numbers"][name] = max(0, int(values.get("turn", 0)))
         state["current_turns"][name] = _turn_from_data(values.get("current"), boss)
         state["histories"][name] = [

@@ -144,7 +144,7 @@ class SafetyTests(unittest.TestCase):
         for tool in ("fog_hide", "fog_reveal", "area_circle", "area_cone", "area_line"):
             self.assertIn(tool, map_code)
         self.assertIn("battle_effects", map_code)
-        self.assertIn("key=in.(battle_grid,battle_effects)", map_code)
+        self.assertIn("key=in.(battle_grid,battle_effects,battle_fog,battle_areas)", map_code)
         self.assertNotIn("async function pollEffects()", map_code)
 
     def test_variable_weapons_keep_existing_data_in_source(self):

@@ -72,14 +72,7 @@ async function refreshCatalog(){
   const responses=await Promise.all([charReq,bossReq]);
   if(responses[0].ok){
     const rows=await responses[0].json();
-    if(action||fxLastWrite>pollStart)return;
-  fogReady=true;
-  const legacy=rows.find(row=>row.key==='battle_effects')?.data||{};
-  const fogData=rows.find(row=>row.key==='battle_fog')?.data||legacy;
-  const areaData=rows.find(row=>row.key==='battle_areas')?.data||legacy;
-  fog=Array.isArray(fogData.fog)?fogData.fog.slice(0,COLS*ROWS):[];
-  areas=Array.isArray(areaData.areas)?areaData.areas.slice(0,30):[];
-  for(const row of rows){
+    for(const row of rows){
       const pid=row.player_id;
       if(catalog[pid]&&row.data){
         const next=String(row.data.token_url||'');
@@ -283,6 +276,13 @@ async function poll(){
   const r=await fetch(API+'/rest/v1/app_state?key=in.(battle_grid,battle_effects,battle_fog,battle_areas)&select=key,data',{headers});
   if(!r.ok)throw Error(r.status);
   const rows=await r.json();
+  if(action||fxLastWrite>pollStart)return;
+  fogReady=true;
+  const legacy=rows.find(row=>row.key==='battle_effects')?.data||{};
+  const fogData=rows.find(row=>row.key==='battle_fog')?.data||legacy;
+  const areaData=rows.find(row=>row.key==='battle_areas')?.data||legacy;
+  fog=Array.isArray(fogData.fog)?fogData.fog.slice(0,COLS*ROWS):[];
+  areas=Array.isArray(areaData.areas)?areaData.areas.slice(0,30):[];
   for(const row of rows){
    const data=row.data||{};
    if(row.key==='battle_grid'&&Array.isArray(data.tokens)){

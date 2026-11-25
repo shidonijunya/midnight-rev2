@@ -10,10 +10,7 @@ def map_html(map_config, token_catalog):
     from auth_unified import secure_mode_enabled
     anon = "" if secure_mode_enabled() else str(config_value("SUPABASE_ANON_KEY") or "")
     # No service-role key is ever embedded in client-side HTML.
-    from shared_backend import auth_configured
-    import streamlit as st
-    can_edit_effects = not auth_configured() or st.session_state.get("_midnight_role") == "mestre"
-    settings = {"can_edit_effects": can_edit_effects, "api": api, "anon": anon, "config": map_config or {},
+    settings = {"api": api, "anon": anon, "config": map_config or {},
                 "catalog": token_catalog or {}}
     source = r"""<!doctype html><html lang="pt-BR"><head><meta charset="UTF-8">
 <style>
@@ -41,7 +38,8 @@ button.active{border-color:#c5485b;background:#4a1e29}#status{margin-left:auto;c
 <option value="area_cone">Área: cone</option>
 <option value="area_line">Área: linha</option>
 </select>
-<button id="clear_fx" title="Remover áreas e névoa">Limpar efeitos</button>
+<button id="clear_fx" title="Remover áreas de ataque">Limpar efeitos</button>
+<button id="clear_fog">Revelar mapa inteiro</button>
 <button id="reset">⤢ Ajustar</button>
 <button id="clear" title="Remover todos os tokens">Limpar tokens</button>
 <span id="status">Sincronizando…</span>
@@ -60,7 +58,6 @@ c.style.width='100%';c.style.height='100%';
 const headers={'apikey':KEY,'Authorization':'Bearer '+KEY,'Content-Type':'application/json'};
 let config=OPT.config||{},tokens=[],scale=1,offsetX=0,offsetY=0,locked=true,measure=false,action=null;
 const fxTool=document.getElementById('fx_tool'),clearFx=document.getElementById('clear_fx');
-if(!OPT.can_edit_effects){fxTool.style.display='none';clearFx.style.display='none';}
 let fog=[],areas=[],effectsDirty=false,fxLastWrite=0,effectsReading=false;
 let lastWrite=0,dirty=false,reading=false;
 const images={};let background=null,bgUrl='',refreshingCatalog=false;
@@ -75,7 +72,14 @@ async function refreshCatalog(){
   const responses=await Promise.all([charReq,bossReq]);
   if(responses[0].ok){
     const rows=await responses[0].json();
-    for(const row of rows){
+    if(action||fxLastWrite>pollStart)return;
+  fogReady=true;
+  const legacy=rows.find(row=>row.key==='battle_effects')?.data||{};
+  const fogData=rows.find(row=>row.key==='battle_fog')?.data||legacy;
+  const areaData=rows.find(row=>row.key==='battle_areas')?.data||legacy;
+  fog=Array.isArray(fogData.fog)?fogData.fog.slice(0,COLS*ROWS):[];
+  areas=Array.isArray(areaData.areas)?areaData.areas.slice(0,30):[];
+  for(const row of rows){
       const pid=row.player_id;
       if(catalog[pid]&&row.data){
         const next=String(row.data.token_url||'');
@@ -110,7 +114,14 @@ const sizeControl=document.getElementById('size');
 function side(t){return Math.max(1,Math.min(4,Number(t.size)||1));}
 function move(t,x,y){t.x=Math.max(0,Math.min(COLS-side(t),x));t.y=Math.max(0,Math.min(ROWS-side(t),y));}
 function select(t){selected=instance(t);tokenSelect.value=t.id;sizeControl.value=side(t);}
-function tokenAt(p){const w=world(p);return [...tokens].reverse().find(t=>w.x>=t.x*CELL&&w.x<(t.x+side(t))*CELL&&w.y>=t.y*CELL&&w.y<(t.y+side(t))*CELL);}
+let fogReady=!remote;
+function concealed(t){
+ for(let y=t.y;y<t.y+side(t);y++)for(let x=t.x;x<t.x+side(t);x++){
+  if(fog.includes(x+','+y))return true;
+ }
+ return !fogReady;
+}
+function tokenAt(p){const w=world(p);return [...tokens].reverse().find(t=>!concealed(t)&&w.x>=t.x*CELL&&w.x<(t.x+side(t))*CELL&&w.y>=t.y*CELL&&w.y<(t.y+side(t))*CELL);}
 function renderMap(){setBackground();ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';ctx.fillStyle='#111827';ctx.fillRect(0,0,W,H);
  if(background&&background.complete&&background.naturalWidth){
   const mode=config.fit||'cover',iw=background.naturalWidth,ih=background.naturalHeight;
@@ -121,12 +132,6 @@ function renderMap(){setBackground();ctx.imageSmoothingEnabled=true;ctx.imageSmo
   const bw=mode==='stretch'?W*zoom:iw*factor*zoom;
   const bh=mode==='stretch'?H*zoom:ih*factor*zoom;
   ctx.drawImage(background,(W-bw)/2+panX,(H-bh)/2+panY,bw,bh);
- }
- // Fog overlays the image; a pale grid is drawn above it for navigation.
- ctx.fillStyle='rgba(3,6,13,.87)';
- for(const id of fog){const parts=String(id).split(','),x=Number(parts[0]),y=Number(parts[1]);
-  if(Number.isInteger(x)&&Number.isInteger(y)&&x>=0&&x<COLS&&y>=0&&y<ROWS)
-    ctx.fillRect(x*CELL,y*CELL,CELL,CELL);
  }
  ctx.strokeStyle='rgba(228,236,248,.42)';ctx.lineWidth=1.05;
  for(let i=0;i<=COLS;i++){ctx.beginPath();ctx.moveTo(i*CELL+.5,0);ctx.lineTo(i*CELL+.5,H);ctx.stroke();}
@@ -150,13 +155,10 @@ function renderMap(){setBackground();ctx.imageSmoothingEnabled=true;ctx.imageSmo
    ctx.fill();ctx.stroke();ctx.restore();
  }
  areas.forEach(paintArea);
- if(action?.mode==='rect'){
-   const {x,y,width,height}=fogBounds(action.start,action.end);
-   ctx.strokeStyle='#8edcff';ctx.lineWidth=2/scale;
-   ctx.strokeRect(x*CELL,y*CELL,width*CELL,height*CELL);
- }
+
  if(action&&action.mode==='area')paintArea({kind:action.kind,start:action.start,end:action.end});
  for(const t of tokens){
+  if(concealed(t)){if(selected===instance(t))selected=null;continue;}
   const span=side(t)*CELL,x=t.x*CELL+span/2,y=t.y*CELL+span/2,entry=catalog[t.id]||{},url=entry.url;
   const img=getImg(url);
   if(img&&img.complete&&img.naturalWidth){
@@ -188,6 +190,19 @@ function renderMap(){setBackground();ctx.imageSmoothingEnabled=true;ctx.imageSmo
   ctx.fillStyle='#111827df';ctx.fillRect(mx-tw/2,my-13,tw,27);
   ctx.fillStyle='#ffe19c';ctx.fillText(label,mx,my);
  }
+ // Round outward in device pixels so fractional zoom leaves no visible seams.
+ ctx.fillStyle='#080a10';
+ if(!fogReady){ctx.fillRect(0,0,W,H);return;}
+ const pixel=1/(scale*(window.devicePixelRatio||1));
+ for(const key of fog){
+  const [x,y]=String(key).split(',').map(Number);
+  ctx.fillRect(x*CELL-pixel,y*CELL-pixel,CELL+2*pixel,CELL+2*pixel);
+ }
+ if(action?.mode==='rect'){
+   const {x,y,width,height}=fogBounds(action.start,action.end);
+   ctx.strokeStyle='#8edcff';ctx.lineWidth=2/scale;
+   ctx.strokeRect(x*CELL,y*CELL,width*CELL,height*CELL);
+ }
 }
 function draw(){
  const density=window.devicePixelRatio||1;
@@ -212,13 +227,13 @@ async function save(){dirty=true;lastWrite=Date.now();draw();
   if(!r.ok)throw Error('HTTP '+r.status);dirty=false;status.textContent='● Sincronizado';
  }catch(e){status.textContent='⚠ Falha ao gravar';}
 }
-async function saveEffects(){
+async function saveEffects(layer){
  effectsDirty=true;fxLastWrite=Date.now();draw();
  if(!remote){status.textContent='Efeitos locais';return;}
  try{
   const response=await fetch(API+'/rest/v1/app_state?on_conflict=key',{
    method:'POST',headers:{...headers,Prefer:'resolution=merge-duplicates'},
-   body:JSON.stringify({key:'battle_effects',data:{fog,areas},updated_at:new Date().toISOString()})});
+   body:JSON.stringify({key:layer==='fog'?'battle_fog':'battle_areas',data:layer==='fog'?{fog}:{areas},updated_at:new Date().toISOString()})});
   if(!response.ok)throw Error(response.status);
   effectsDirty=false;status.textContent='● Efeitos sincronizados';
  }catch(e){status.textContent='⚠ Falha ao salvar efeitos';}
@@ -234,10 +249,10 @@ function editFogRectangle(start,end,hide){
    if(hide)cells.add(key);else cells.delete(key);
   }
  }
- fog=[...cells];saveEffects();
+ fog=[...cells];saveEffects('fog');
 }
 fxTool.addEventListener('change',()=>{
- if(OPT.can_edit_effects&&fxTool.value==='fog_full'){
+ if(fxTool.value==='fog_full'){
   editFogRectangle({x:0,y:0},{x:COLS-1,y:ROWS-1},true);
   fxTool.value='rect_reveal';
  }
@@ -262,10 +277,10 @@ async function poll(){
  if(!remote||reading||action||
      dirty&&Date.now()-lastWrite<2500||
      effectsDirty&&Date.now()-fxLastWrite<2500)return;
- reading=true;
+ const pollStart=Date.now();reading=true;
  try{
   // One fetch for both tokens and spell/fog overlays.
-  const r=await fetch(API+'/rest/v1/app_state?key=in.(battle_grid,battle_effects)&select=key,data',{headers});
+  const r=await fetch(API+'/rest/v1/app_state?key=in.(battle_grid,battle_effects,battle_fog,battle_areas)&select=key,data',{headers});
   if(!r.ok)throw Error(r.status);
   const rows=await r.json();
   for(const row of rows){
@@ -274,11 +289,7 @@ async function poll(){
     tokens=data.tokens.filter(t=>Number.isInteger(t.x)&&Number.isInteger(t.y)&&
       t.x>=0&&t.x<COLS&&t.y>=0&&t.y<ROWS).slice(0,150);
    }
-   if(row.key==='battle_effects'){
-    if(Array.isArray(data.fog))fog=data.fog.slice(0,COLS*ROWS);
-    if(Array.isArray(data.areas))areas=data.areas.slice(0,30).filter(x=>
-      x&&['area_circle','area_cone','area_line'].includes(x.kind));
-   }
+
   }
   dirty=false;effectsDirty=false;draw();status.textContent='● Sincronizado';
  }catch(e){status.textContent='⚠ Sem conexão';}
@@ -289,7 +300,7 @@ vp.addEventListener('wheel',e=>{e.preventDefault();const p=position(e),w=world(p
 vp.addEventListener('pointerdown',e=>{
  if(e.button!==0)return;
  vp.focus();const p=position(e),w=world(p),target=tokenAt(p);
- const tool=OPT.can_edit_effects?fxTool.value:'normal';
+ const tool=fxTool.value;
  if(tool.startsWith('rect_')){
    action={mode:'rect',kind:tool,start:cell(p),end:cell(p)};
  }else if(tool==='fog_hide'||tool==='fog_reveal'){
@@ -316,9 +327,9 @@ vp.addEventListener('pointerup',e=>{
  action=null;vp.classList.remove('drag');draw();
  if(mode==='token')save();
  if(mode==='rect')editFogRectangle(previous.start,cell(p),previous.kind==='rect_hide');
- if(mode==='fog')saveEffects();
+ if(mode==='fog')saveEffects('fog');
  if(mode==='area'){const w=world(p);const item={kind:previous.kind,start:previous.start,end:w};
-   if(areas.length>=30)areas.shift();areas.push(item);saveEffects();}
+   if(areas.length>=30)areas.shift();areas.push(item);saveEffects('areas');}
  if(mode==='map')saveMapConfig();
 });
 vp.addEventListener('contextmenu',e=>{e.preventDefault();const t=tokenAt(position(e));if(t){tokens=tokens.filter(x=>x!==t);save();}});
@@ -330,16 +341,21 @@ document.getElementById('add').onclick=()=>{
  move(t,t.x,t.y);tokens.push(t);save();
  select(t);vp.focus();draw();
 };
-tokenSelect.onchange=()=>{selected=null;const t=tokens.find(t=>t.id===tokenSelect.value);if(t)select(t);draw();};
-sizeControl.onchange=()=>{const t=tokens.find(t=>instance(t)===selected);if(t){t.size=Number(sizeControl.value);move(t,t.x,t.y);select(t);save();vp.focus();}};
-vp.onkeydown=e=>{const d={ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]}[e.key];const t=tokens.find(t=>instance(t)===selected);if(d&&t){e.preventDefault();move(t,t.x+d[0],t.y+d[1]);save();}};
+tokenSelect.onchange=()=>{selected=null;const t=tokens.find(t=>t.id===tokenSelect.value&&!concealed(t));if(t)select(t);draw();};
+sizeControl.onchange=()=>{const t=tokens.find(t=>instance(t)===selected);if(t&&!concealed(t)){t.size=Number(sizeControl.value);move(t,t.x,t.y);select(t);save();vp.focus();}};
+vp.onkeydown=e=>{const d={ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]}[e.key];const t=tokens.find(t=>instance(t)===selected);if(d&&t&&!concealed(t)){e.preventDefault();move(t,t.x+d[0],t.y+d[1]);save();}};
 vp.onpointercancel=()=>{action=null;vp.classList.remove('drag');draw();};
 document.getElementById('measure').onclick=()=>{
  measure=!measure;document.getElementById('measure').classList.toggle('active',measure);
 };
 document.getElementById('reset').onclick=fit;
 document.getElementById('clear').onclick=()=>{tokens=[];selected=null;save();};
-clearFx.onclick=()=>{fog=[];areas=[];saveEffects();fxTool.value='normal';};
+clearFx.onclick=()=>{areas=[];saveEffects('areas');fxTool.value='normal';};
+document.getElementById('clear_fog').onclick=()=>{
+ if(fogReady&&fog.length&&confirm('Revelar o mapa inteiro para todos e remover toda a névoa?')){
+  fog=[];saveEffects('fog');fxTool.value='normal';
+ }
+};
 loadCatalog();fit();poll();refreshCatalog();
 if(remote){setInterval(poll,1300);setInterval(refreshCatalog,2500);}
 </script></body></html>"""

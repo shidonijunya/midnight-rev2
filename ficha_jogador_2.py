@@ -1,3 +1,4 @@
+from html import escape
 import json
 import os
 import re
@@ -237,6 +238,11 @@ st.markdown("""
 .st-key-sheet-secondary { margin-top:.85rem; padding-top:.65rem; border-top:1px solid #343844; }
 .attr-mod { margin:0; text-align:center; line-height:1.2; padding:0 0 .45rem; }
 [data-testid="stColumn"]:has(.attr-mod) [data-testid="stVerticalBlock"] { gap:.22rem; }
+.portrait-name { text-align:center; font-size:1.05rem; line-height:1.35; margin:0; padding:.4rem 0; overflow-wrap:anywhere; }
+.st-key-sheet-portrait img { border-radius:.5rem; object-fit:contain; }
+.st-key-sheet-overview [data-testid="stWidgetLabel"] p { font-size:.78rem; line-height:1.3; }
+.st-key-sheet-secondary [data-testid="stColumn"]:has(input) [data-testid="stVerticalBlock"] { gap:.25rem; }
+[data-testid="stColumn"]:has(> div .attr-mod) .attr-mod { padding-bottom:.65rem; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -537,10 +543,9 @@ def render_atributos():
         if index % 4 == 0:
             cols = st.columns(4)
         with cols[index % 4]:
-            st.markdown(f'<div class="attr-name">{nome}</div>', unsafe_allow_html=True)
             st.number_input(
                 nome, min_value=1, max_value=100, step=1,
-                key=attr_key(nome), label_visibility="collapsed"
+                key=attr_key(nome)
             )
             mod = modificador(st.session_state[attr_key(nome)])
             sinal = "+" if mod >= 0 else ""
@@ -691,10 +696,9 @@ def render_destaques():
         )
 
     with col2:
-        st.markdown('<div class="info-label">🌘 Réquiem ao Umbral</div>', unsafe_allow_html=True)
         st.number_input(
             "Réquiem ao Umbral", min_value=0, step=1,
-            key="requiem_atual", label_visibility="collapsed"
+            key="requiem_atual"
         )
         st.markdown(
             f'<div class="info-value">{st.session_state["requiem_atual"]} / 100</div>',
@@ -1024,12 +1028,18 @@ def main():
     init_session_state()
     sync_shared_state()
 
-    overview, editor = st.columns([1, 1.35], gap="medium")
+    overview, portrait, editor = st.columns([3.4, 1.45, 5.15], gap="small")
     with overview, st.container(border=True, key="sheet-overview"):
         render_header()
         render_barras()
         with st.container(key="sheet-secondary"):
             render_destaques()
+    with portrait, st.container(key="sheet-portrait"):
+        name = st.session_state.get("nome_personagem") or PLAYER_NAME
+        st.markdown(f'<h3 class="portrait-name">{escape(str(name))}</h3>', unsafe_allow_html=True)
+        image_url = st.session_state.get("imagem_url")
+        if image_url:
+            st.image(image_url, width="stretch")
     with editor:
         sections = {
             "Atributos": render_atributos, "Perícias": render_pericias,

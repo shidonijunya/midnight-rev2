@@ -224,6 +224,13 @@ st.markdown("""
 .bar-bg { height: 10px; }
 .info-box,.attr-box,.stat-highlight { padding: 5px 8px; }
 .main-title { font-size: 1.55rem; }
+.block-container { max-width: 1680px; padding-top: 3rem; }
+.st-key-sheet-overview { background: #191b24; }
+.stat-highlight { border:0; background:transparent; padding:0; text-align:left; }
+.stat-highlight-label,.info-label,.bar-title { color:#bfc5d4; font-size:.73rem; letter-spacing:.045em; line-height:1.4; }
+.stat-highlight-value,.info-value { color:#eef0f6; font-size:1.2rem; }
+[data-testid="stVerticalBlock"] { gap:.6rem; }
+[data-testid="stTabs"] [role="tablist"] { overflow-x:auto; gap:.8rem; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -486,7 +493,7 @@ def resetar_estamina_callback():
 
 def render_header():
 
-    col1, col2, col3 = st.columns([2.5, 1, 1.5])
+    col1, col2, col3, portrait = st.columns([2.5, 1, 1.5, 1])
 
     with col1:
         st.text_input("Nome do personagem", key="nome_personagem")
@@ -501,7 +508,7 @@ def render_header():
             "Fragmentos de Essência", min_value=0, step=1, key="fragmentos_essencia"
         )
 
-    with st.expander("Retrato do personagem"):
+    with portrait.popover("Retrato"):
         from image_manager import render_image_editor
         new_image_url = render_image_editor("portrait", PLAYER_ID,
                       st.session_state.get("imagem_url", ""), key=f"portrait_{PLAYER_ID}")
@@ -520,21 +527,20 @@ def render_version_history():
     versions = list_character_history(PLAYER_ID)
     if not versions:
         return
-    with st.expander("Histórico da ficha", expanded=False):
-        chosen = st.selectbox("Versões anteriores", range(len(versions)),
-            format_func=lambda i: str(versions[i].get("saved_at", "?"))[:19].replace("T", " ") +
-                                " — " + str(versions[i].get("reason", "edição")),
-            key=f"history_version_{PLAYER_ID}")
-        snapshot = versions[chosen].get("data", {})
-        st.caption("Nome: " + str(snapshot.get("nome_personagem", "?")) +
-                   " · Nível: " + str(snapshot.get("nivel", "?")))
-        if auth_configured() and st.session_state.get("_midnight_role") == "mestre":
-            confirm = st.checkbox("Confirmo a restauração desta versão", key=f"confirm_history_{PLAYER_ID}")
-            if st.button("Restaurar versão", disabled=not confirm, key=f"restore_history_{PLAYER_ID}"):
-                if restore_character_version(PLAYER_ID, chosen):
-                    st.session_state.pop("ficha_inicializada", None)
-                    st.rerun()
-                st.error("Não foi possível restaurar a versão selecionada.")
+    chosen = st.selectbox("Versões anteriores", range(len(versions)),
+        format_func=lambda i: str(versions[i].get("saved_at", "?"))[:19].replace("T", " ") +
+                            " — " + str(versions[i].get("reason", "edição")),
+        key=f"history_version_{PLAYER_ID}")
+    snapshot = versions[chosen].get("data", {})
+    st.caption("Nome: " + str(snapshot.get("nome_personagem", "?")) +
+               " · Nível: " + str(snapshot.get("nivel", "?")))
+    if auth_configured() and st.session_state.get("_midnight_role") == "mestre":
+        confirm = st.checkbox("Confirmo a restauração desta versão", key=f"confirm_history_{PLAYER_ID}")
+        if st.button("Restaurar versão", disabled=not confirm, key=f"restore_history_{PLAYER_ID}"):
+            if restore_character_version(PLAYER_ID, chosen):
+                st.session_state.pop("ficha_inicializada", None)
+                st.rerun()
+            st.error("Não foi possível restaurar a versão selecionada.")
 
 
 
@@ -544,23 +550,22 @@ def render_version_history():
 
 def render_atributos():
 
-    with st.expander("Atributos", expanded=False):
 
-        cols = st.columns(7)
-
-        for col, nome in zip(cols, ATRIBUTOS):
-            with col:
-                st.markdown(f'<div class="attr-name">{nome}</div>', unsafe_allow_html=True)
-                st.number_input(
-                    nome, min_value=1, max_value=100, step=1,
-                    key=attr_key(nome), label_visibility="collapsed"
-                )
-                mod = modificador(st.session_state[attr_key(nome)])
-                sinal = "+" if mod >= 0 else ""
-                st.markdown(
-                    f'<div class="attr-mod">{sinal}{mod}</div>',
-                    unsafe_allow_html=True
-                )
+    for index, nome in enumerate(ATRIBUTOS):
+        if index % 4 == 0:
+            cols = st.columns(4)
+        with cols[index % 4]:
+            st.markdown(f'<div class="attr-name">{nome}</div>', unsafe_allow_html=True)
+            st.number_input(
+                nome, min_value=1, max_value=100, step=1,
+                key=attr_key(nome), label_visibility="collapsed"
+            )
+            mod = modificador(st.session_state[attr_key(nome)])
+            sinal = "+" if mod >= 0 else ""
+            st.markdown(
+                f'<div class="attr-mod">{sinal}{mod}</div>',
+                unsafe_allow_html=True
+            )
 
 
 def get_atributos_dict():
@@ -615,7 +620,6 @@ def render_barras():
 
     # ---------------- HP ----------------
     with col_hp:
-        st.markdown('<div class="bar-container">', unsafe_allow_html=True)
         st.markdown('<div class="bar-title">❤️ Pontos de Vida</div>', unsafe_allow_html=True)
 
         st.number_input(
@@ -633,12 +637,10 @@ def render_barras():
             """,
             unsafe_allow_html=True
         )
-        st.caption(f"HP (Constituição): {hp_const} · HP (Fortitude): {hp_fort}")
-        st.markdown('</div>', unsafe_allow_html=True)
+
 
     # ---------------- Estamina ----------------
     with col_est:
-        st.markdown('<div class="bar-container">', unsafe_allow_html=True)
         st.markdown('<div class="bar-title">🟢 Estamina</div>', unsafe_allow_html=True)
 
         st.number_input(
@@ -656,11 +658,10 @@ def render_barras():
             """,
             unsafe_allow_html=True
         )
-        st.markdown('</div>', unsafe_allow_html=True)
+
 
     # ---------------- Mana ----------------
     with col_mana:
-        st.markdown('<div class="bar-container">', unsafe_allow_html=True)
         st.markdown('<div class="bar-title">🔵 Mana</div>', unsafe_allow_html=True)
 
         st.number_input(
@@ -678,7 +679,7 @@ def render_barras():
             """,
             unsafe_allow_html=True
         )
-        st.markdown('</div>', unsafe_allow_html=True)
+
 
 
 # ============================================================
@@ -706,10 +707,8 @@ def render_destaques():
             """,
             unsafe_allow_html=True
         )
-        st.caption("Soma do RD de Peitoral, Capacete, Braçadeiras e Botas.")
 
     with col2:
-        st.markdown('<div class="info-box">', unsafe_allow_html=True)
         st.markdown('<div class="info-label">🌘 Réquiem ao Umbral</div>', unsafe_allow_html=True)
         st.number_input(
             "Réquiem ao Umbral", min_value=0, step=1,
@@ -719,11 +718,10 @@ def render_destaques():
             f'<div class="info-value">{st.session_state["requiem_atual"]} / 100</div>',
             unsafe_allow_html=True
         )
-        st.markdown('</div>', unsafe_allow_html=True)
+
 
     with col3:
         classe_extra = "overweight" if sobrepeso else ""
-        st.markdown('<div class="info-box">', unsafe_allow_html=True)
         st.markdown('<div class="info-label">🎒 Equip Load</div>', unsafe_allow_html=True)
         st.markdown(
             f'<div class="info-value {classe_extra}">'
@@ -735,7 +733,7 @@ def render_destaques():
                 '<div class="warning-box">⚠️ SOBREPESO</div>',
                 unsafe_allow_html=True
             )
-        st.markdown('</div>', unsafe_allow_html=True)
+
 
 
 # ============================================================
@@ -744,55 +742,53 @@ def render_destaques():
 
 def render_pericias():
 
-    with st.expander("Perícias", expanded=False):
 
-        mods = get_modificadores_dict()
+    mods = get_modificadores_dict()
 
-        header = st.columns([2.4, 1.2, 1, 1.4])
-        for c, txt in zip(header, ["Perícia", "Modificador", "Treinado", "Bônus"]):
-            with c:
-                st.markdown(f"**{txt}**")
+    header = st.columns([2.4, 1.2, 1, 1.4])
+    for c, txt in zip(header, ["Perícia", "Modificador", "Treinado", "Bônus"]):
+        with c:
+            st.markdown(f"**{txt}**")
 
-        for pericia, attrs_pericia in PERICIAS.items():
+    for pericia, attrs_pericia in PERICIAS.items():
 
-            mod_pericia = max(mods[a] for a in attrs_pericia)
+        mod_pericia = max(mods[a] for a in attrs_pericia)
 
-            treinado = st.session_state[pericia_key(pericia)]
-            bonus = bonus_treinado(mod_pericia) if treinado else bonus_nao_treinado(mod_pericia)
+        treinado = st.session_state[pericia_key(pericia)]
+        bonus = bonus_treinado(mod_pericia) if treinado else bonus_nao_treinado(mod_pericia)
 
-            cols = st.columns([2.4, 1.2, 1, 1.4])
+        cols = st.columns([2.4, 1.2, 1, 1.4])
 
-            with cols[0]:
-                st.write(f"**{pericia}** ({'/'.join(a[:3] for a in attrs_pericia)})")
+        with cols[0]:
+            st.write(f"**{pericia}** ({'/'.join(a[:3] for a in attrs_pericia)})")
 
-            with cols[1]:
-                sinal = "+" if mod_pericia >= 0 else ""
-                st.write(f"{sinal}{mod_pericia}")
+        with cols[1]:
+            sinal = "+" if mod_pericia >= 0 else ""
+            st.write(f"{sinal}{mod_pericia}")
 
-            with cols[2]:
-                st.checkbox(
-                    "Treinado", key=pericia_key(pericia), label_visibility="collapsed"
-                )
+        with cols[2]:
+            st.checkbox(
+                "Treinado", key=pericia_key(pericia), label_visibility="collapsed"
+            )
 
-            with cols[3]:
-                sinal_b = "+" if bonus >= 0 else ""
-                st.write(f"**{sinal_b}{bonus}**")
+        with cols[3]:
+            sinal_b = "+" if bonus >= 0 else ""
+            st.write(f"**{sinal_b}{bonus}**")
 
 
-    # ============================================================
-    # RENDER: DEFESAS
-    # ============================================================
+# ============================================================
+# RENDER: DEFESAS
+# ============================================================
 
 def render_defesas():
-    with st.expander("Defesas e movimentação", expanded=False):
-        for nome, chave in DEFESAS.items():
-            c1, c2, c3 = st.columns([2, 1, 1])
-            with c1:
-                st.write(f"**{nome}** — rolagem 1d20 + bônus")
-            with c2:
-                st.number_input(f"Bônus {nome}", step=1, key=f"defesa_{chave}_bonus")
-            with c3:
-                st.number_input(f"Custo estamina {nome}", min_value=0, step=1, key=f"defesa_{chave}_custo")
+    for nome, chave in DEFESAS.items():
+        c1, c2, c3 = st.columns([2, 1, 1])
+        with c1:
+            st.write(f"**{nome}** — rolagem 1d20 + bônus")
+        with c2:
+            st.number_input(f"Bônus {nome}", step=1, key=f"defesa_{chave}_bonus")
+        with c3:
+            st.number_input(f"Custo estamina {nome}", min_value=0, step=1, key=f"defesa_{chave}_custo")
 
 
 # ============================================================
@@ -801,122 +797,120 @@ def render_defesas():
 
 def render_armas():
 
-    with st.expander("Armas", expanded=False):
-        st.number_input("Quantidade de armas", min_value=1, max_value=NUM_ARMAS,
-                        step=1, key="weapon_slots_count",
-                        help="Ao reduzir a quantidade, os dados dos slots ocultos são preservados.")
-        for i in range(int(st.session_state["weapon_slots_count"])):
+    st.number_input("Quantidade de armas", min_value=1, max_value=NUM_ARMAS,
+                    step=1, key="weapon_slots_count",
+                    help="Ao reduzir a quantidade, os dados dos slots ocultos são preservados.")
+    for i in range(int(st.session_state["weapon_slots_count"])):
 
-            keys = weapon_keys(i)
+        keys = weapon_keys(i)
 
-            with st.popover(f"Importar JSON — arma {i + 1}"):
-                pasted = st.text_area("JSON da arma", key=f"weapon_json_{i}", height=130,
-                    placeholder='{"nome":"Espada","test_dados":1,"test_lados":20,"bonus_ataque":5,"dano_dados":2,"dano_lados":6}')
-                if st.button("Aplicar JSON", key=f"apply_weapon_json_{i}"):
-                    try:
-                        payload = json.loads(pasted)
-                        if not isinstance(payload, dict):
-                            raise ValueError("Esperado um objeto JSON.")
-                        updates = {}
-                        defaults = build_default_state()
-                        for field, statekey in keys.items():
-                            if field not in payload:
-                                continue
-                            value = payload[field]
-                            if statekey in defaults and isinstance(defaults[statekey], int):
-                                if isinstance(value, bool):
-                                    raise ValueError(f"Campo inválido: {field}")
-                                value = int(value)
-                            elif not isinstance(value, str):
-                                value = str(value)
-                            if field in ("test_lados", "dano_lados") and value not in DICE_SIDES_OPTIONS:
-                                raise ValueError(f"Dado inválido para {field}")
-                            if field in ("test_dados", "dano_dados", "crit_min", "crit_mult") and value < 1:
-                                raise ValueError(f"Valor inválido para {field}")
-                            updates[statekey] = value
-                        if not updates:
-                            raise ValueError("Nenhum campo reconhecido.")
-                        st.session_state.update(updates)
-                        st.success("Arma importada. Os campos continuam editáveis.")
-                        st.rerun()
-                    except (ValueError, TypeError, json.JSONDecodeError) as exc:
-                        st.error(f"JSON inválido: {exc}")
+        with st.popover(f"Importar JSON — arma {i + 1}"):
+            pasted = st.text_area("JSON da arma", key=f"weapon_json_{i}", height=130,
+                placeholder='{"nome":"Espada","test_dados":1,"test_lados":20,"bonus_ataque":5,"dano_dados":2,"dano_lados":6}')
+            if st.button("Aplicar JSON", key=f"apply_weapon_json_{i}"):
+                try:
+                    payload = json.loads(pasted)
+                    if not isinstance(payload, dict):
+                        raise ValueError("Esperado um objeto JSON.")
+                    updates = {}
+                    defaults = build_default_state()
+                    for field, statekey in keys.items():
+                        if field not in payload:
+                            continue
+                        value = payload[field]
+                        if statekey in defaults and isinstance(defaults[statekey], int):
+                            if isinstance(value, bool):
+                                raise ValueError(f"Campo inválido: {field}")
+                            value = int(value)
+                        elif not isinstance(value, str):
+                            value = str(value)
+                        if field in ("test_lados", "dano_lados") and value not in DICE_SIDES_OPTIONS:
+                            raise ValueError(f"Dado inválido para {field}")
+                        if field in ("test_dados", "dano_dados", "crit_min", "crit_mult") and value < 1:
+                            raise ValueError(f"Valor inválido para {field}")
+                        updates[statekey] = value
+                    if not updates:
+                        raise ValueError("Nenhum campo reconhecido.")
+                    st.session_state.update(updates)
+                    st.success("Arma importada. Os campos continuam editáveis.")
+                    st.rerun()
+                except (ValueError, TypeError, json.JSONDecodeError) as exc:
+                    st.error(f"JSON inválido: {exc}")
 
-            with st.container():
-                st.markdown('<div class="weapon-card">', unsafe_allow_html=True)
+        with st.container():
 
-                st.text_input(f"Nome da arma {i + 1}", key=keys["nome"])
 
-                st.markdown("**Ataque Padrão** — parâmetros manuais")
+            st.text_input(f"Nome da arma {i + 1}", key=keys["nome"])
 
-                st.markdown("**Ataque**")
-                c1, c2, c3 = st.columns(3)
-                with c1:
-                    st.number_input("Dados teste", min_value=1, max_value=10, step=1, key=keys["test_dados"])
-                with c2:
-                    st.selectbox("Lados teste", DICE_SIDES_OPTIONS, key=keys["test_lados"])
-                with c3:
-                    st.number_input("Bônus atq.", step=1, key=keys["bonus_ataque"])
-                st.markdown("**Dano**")
-                c4, c5, c6 = st.columns(3)
-                with c4:
-                    st.number_input("Dados dano", min_value=1, max_value=20, step=1, key=keys["dano_dados"])
-                with c5:
-                    st.selectbox("Lados dano", DICE_SIDES_OPTIONS, key=keys["dano_lados"])
-                with c6:
-                    st.number_input("Bônus dano", step=1, key=keys["bonus_dano"])
-                with st.popover("Crítico e Weapon Art"):
-                    c7, c8 = st.columns(2)
-                    with c7:
-                        st.number_input("Crítico mín.", min_value=1, max_value=100, step=1, key=keys["crit_min"])
-                    with c8:
-                        st.number_input("Crítico ×", min_value=1, max_value=20, step=1, key=keys["crit_mult"])
-                    st.text_area("Descrição da Weapon Art", key=keys["wa_texto"], height=80)
-                    wc1, wc2 = st.columns(2)
-                    with wc1:
-                        st.number_input("Estamina WA", min_value=0, step=1, key=keys["wa_estamina"])
-                    with wc2:
-                        st.number_input("Mana WA", min_value=0, step=1, key=keys["wa_mana"])
+            st.markdown("**Ataque Padrão** — parâmetros manuais")
 
-                st.number_input(
-                    "Custo de estamina (ataque padrão)", min_value=0, step=1, key=keys["custo_estamina"]
-                )
+            st.markdown("**Ataque**")
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                st.number_input("Dados teste", min_value=1, max_value=10, step=1, key=keys["test_dados"])
+            with c2:
+                st.selectbox("Lados teste", DICE_SIDES_OPTIONS, key=keys["test_lados"])
+            with c3:
+                st.number_input("Bônus atq.", step=1, key=keys["bonus_ataque"])
+            st.markdown("**Dano**")
+            c4, c5, c6 = st.columns(3)
+            with c4:
+                st.number_input("Dados dano", min_value=1, max_value=20, step=1, key=keys["dano_dados"])
+            with c5:
+                st.selectbox("Lados dano", DICE_SIDES_OPTIONS, key=keys["dano_lados"])
+            with c6:
+                st.number_input("Bônus dano", step=1, key=keys["bonus_dano"])
+            with st.popover("Crítico e Weapon Art"):
+                c7, c8 = st.columns(2)
+                with c7:
+                    st.number_input("Crítico mín.", min_value=1, max_value=100, step=1, key=keys["crit_min"])
+                with c8:
+                    st.number_input("Crítico ×", min_value=1, max_value=20, step=1, key=keys["crit_mult"])
+                st.text_area("Descrição da Weapon Art", key=keys["wa_texto"], height=80)
+                wc1, wc2 = st.columns(2)
+                with wc1:
+                    st.number_input("Estamina WA", min_value=0, step=1, key=keys["wa_estamina"])
+                with wc2:
+                    st.number_input("Mana WA", min_value=0, step=1, key=keys["wa_mana"])
 
-                # ---------- Linhas formatadas ----------
-                td, tl = st.session_state[keys["test_dados"]], st.session_state[keys["test_lados"]]
-                ba = st.session_state[keys["bonus_ataque"]]
-                dd, dl = st.session_state[keys["dano_dados"]], st.session_state[keys["dano_lados"]]
-                bd = st.session_state[keys["bonus_dano"]]
-                cmin = st.session_state[keys["crit_min"]]
-                cmult = st.session_state[keys["crit_mult"]]
-                custo = st.session_state[keys["custo_estamina"]]
+            st.number_input(
+                "Custo de estamina (ataque padrão)", min_value=0, step=1, key=keys["custo_estamina"]
+            )
 
-                linha_normal = (
-                    f"{td}d{tl}{'+' if ba >= 0 else ''}{ba}  /  "
-                    f"{dd}d{dl}{'+' if bd >= 0 else ''}{bd}  /  "
-                    f"{cmin}-{tl} x{cmult}  /  Est: {custo}"
-                )
+            # ---------- Linhas formatadas ----------
+            td, tl = st.session_state[keys["test_dados"]], st.session_state[keys["test_lados"]]
+            ba = st.session_state[keys["bonus_ataque"]]
+            dd, dl = st.session_state[keys["dano_dados"]], st.session_state[keys["dano_lados"]]
+            bd = st.session_state[keys["bonus_dano"]]
+            cmin = st.session_state[keys["crit_min"]]
+            cmult = st.session_state[keys["crit_mult"]]
+            custo = st.session_state[keys["custo_estamina"]]
 
-                custo_carregado = custo * 2
-                dd_carregado = dd * 3
+            linha_normal = (
+                f"{td}d{tl}{'+' if ba >= 0 else ''}{ba}  /  "
+                f"{dd}d{dl}{'+' if bd >= 0 else ''}{bd}  /  "
+                f"{cmin}-{tl} x{cmult}  /  Est: {custo}"
+            )
 
-                linha_carregada = (
-                    f"{td}d{tl}{'+' if ba >= 0 else ''}{ba}  /  "
-                    f"{dd_carregado}d{dl}{'+' if bd >= 0 else ''}{bd}  /  "
-                    f"{cmin}-{tl} x{cmult}  /  Est: {custo_carregado}"
-                )
+            custo_carregado = custo * 2
+            dd_carregado = dd * 3
 
-                st.markdown(
-                    f'<div class="attack-line">🗡️ <b>Ataque Padrão</b> &nbsp; {linha_normal}</div>',
-                    unsafe_allow_html=True
-                )
-                st.markdown(
-                    f'<div class="attack-line">💥 <b>Ataque Carregado</b> &nbsp; {linha_carregada}'
-                    f'<br><span class="small-caption">Dano ×3 dados (bônus não é triplicado) · Estamina ×2</span></div>',
-                    unsafe_allow_html=True
-                )
+            linha_carregada = (
+                f"{td}d{tl}{'+' if ba >= 0 else ''}{ba}  /  "
+                f"{dd_carregado}d{dl}{'+' if bd >= 0 else ''}{bd}  /  "
+                f"{cmin}-{tl} x{cmult}  /  Est: {custo_carregado}"
+            )
 
-                st.markdown('</div>', unsafe_allow_html=True)
+            st.markdown(
+                f'<div class="attack-line">🗡️ <b>Ataque Padrão</b> &nbsp; {linha_normal}</div>',
+                unsafe_allow_html=True
+            )
+            st.markdown(
+                f'<div class="attack-line">💥 <b>Ataque Carregado</b> &nbsp; {linha_carregada}'
+                f'<br><span class="small-caption">Dano ×3 dados (bônus não é triplicado) · Estamina ×2</span></div>',
+                unsafe_allow_html=True
+            )
+
 
 
 def get_weapon_names():
@@ -929,75 +923,73 @@ def get_weapon_names():
 
 def render_armadura():
 
-    with st.expander("Armaduras", expanded=False):
 
-        header = st.columns([1.4, 2.4, 1.2, 1.2])
-        for c, txt in zip(header, ["Tipo", "Nome do Item", "Peso", "RD"]):
-            with c:
-                st.markdown(f"**{txt}**")
+    header = st.columns([1.4, 2.4, 1.2, 1.2])
+    for c, txt in zip(header, ["Tipo", "Nome do Item", "Peso", "RD"]):
+        with c:
+            st.markdown(f"**{txt}**")
 
-        for i, tipo in enumerate(ARMOR_SLOTS):
+    for i, tipo in enumerate(ARMOR_SLOTS):
 
-            keys = armor_keys(i)
-            cols = st.columns([1.4, 2.4, 1.2, 1.2])
+        keys = armor_keys(i)
+        cols = st.columns([1.4, 2.4, 1.2, 1.2])
 
-            with cols[0]:
-                st.write(f"**{tipo}**")
-            with cols[1]:
-                st.text_input(f"Nome {tipo}", key=keys["nome"], label_visibility="collapsed")
-            with cols[2]:
-                st.number_input(
-                    f"Peso {tipo}", min_value=0.0, step=0.1, format="%.1f",
-                    key=keys["peso"], label_visibility="collapsed"
-                )
-            with cols[3]:
-                st.number_input(
-                    f"RD {tipo}", min_value=0, step=1,
-                    key=keys["rd"], label_visibility="collapsed"
-                )
+        with cols[0]:
+            st.write(f"**{tipo}**")
+        with cols[1]:
+            st.text_input(f"Nome {tipo}", key=keys["nome"], label_visibility="collapsed")
+        with cols[2]:
+            st.number_input(
+                f"Peso {tipo}", min_value=0.0, step=0.1, format="%.1f",
+                key=keys["peso"], label_visibility="collapsed"
+            )
+        with cols[3]:
+            st.number_input(
+                f"RD {tipo}", min_value=0, step=1,
+                key=keys["rd"], label_visibility="collapsed"
+            )
 
 
-    # ============================================================
-    # RENDER: INVENTÁRIO
-    # ============================================================
+# ============================================================
+# RENDER: INVENTÁRIO
+# ============================================================
 
 def render_inventario():
 
-    with st.expander("Inventário", expanded=False):
 
-        col_a, col_b = st.columns(2)
-        metade = (NUM_INVENTARIO + 1) // 2
+    col_a, col_b = st.columns(2)
+    metade = 4
 
-        for idx_col, (col, faixa) in enumerate(
-            zip([col_a, col_b], [range(0, metade), range(metade, NUM_INVENTARIO)])
-        ):
-            with col:
-                for i in faixa:
-                    keys = inventory_keys(i)
+    for idx_col, (col, faixa) in enumerate(
+        zip([col_a, col_b], [range(0, metade), range(metade, 8)])
+    ):
+        with col:
+            for i in faixa:
+                keys = inventory_keys(i)
 
-                    c1, c2 = st.columns([3, 1])
-                    with c1:
-                        st.text_input(
-                            f"Item {i + 1}", key=keys["nome"],
-                            placeholder=f"Item {i + 1}", label_visibility="collapsed"
-                        )
-                    with c2:
-                        st.number_input(
-                            f"Qtd {i + 1}", min_value=0, step=1,
-                            key=keys["qtd"], label_visibility="collapsed"
-                        )
+                c1, c2 = st.columns([3, 1])
+                with c1:
+                    st.text_input(
+                        f"Item {i + 1}", key=keys["nome"],
+                        placeholder=f"Item {i + 1}", label_visibility="collapsed"
+                    )
+                with c2:
+                    st.number_input(
+                        f"Qtd {i + 1}", min_value=0, step=1,
+                        key=keys["qtd"], label_visibility="collapsed"
+                    )
 
-                    titulo = st.session_state[keys["nome"]] or f"Item {i + 1}"
-                    with st.expander(f"📝 Descrição — {titulo}"):
-                        st.text_area(
-                            f"Descrição {i + 1}", key=keys["desc"], height=70,
-                            label_visibility="collapsed"
-                        )
+                titulo = st.session_state[keys["nome"]] or f"Item {i + 1}"
+                with st.expander(f"📝 Descrição — {titulo}"):
+                    st.text_area(
+                        f"Descrição {i + 1}", key=keys["desc"], height=70,
+                        label_visibility="collapsed"
+                    )
 
 
-    # ============================================================
-    # RENDER: PLANEJADOR DE AÇÕES DO TURNO
-    # ============================================================
+# ============================================================
+# RENDER: PLANEJADOR DE AÇÕES DO TURNO
+# ============================================================
 
 def sync_shared_state(pull=True):
     """Only patch changed fields; never send an old copy of all resources."""
@@ -1030,16 +1022,21 @@ def main():
     init_session_state()
     sync_shared_state()
 
-    render_header()
-    render_version_history()
-    render_barras()
-    render_destaques()
-    render_atributos()
-    render_pericias()
-    render_defesas()
-    render_armas()
-    render_armadura()
-    render_inventario()
+    overview, editor = st.columns([1, 1.35], gap="medium")
+    with overview, st.container(border=True, key="sheet-overview"):
+        render_header()
+        render_barras()
+        render_destaques()
+    with editor:
+        sections = {
+            "Atributos": render_atributos, "Perícias": render_pericias,
+            "Defesas": render_defesas, "Armas": render_armas,
+            "Armadura": render_armadura, "Inventário": render_inventario,
+            "Histórico": render_version_history,
+        }
+        for tab, render in zip(st.tabs(list(sections)), sections.values()):
+            with tab, st.container(height=490):
+                render()
 
     # Persist user edits after widgets, without changing their widget state.
     sync_shared_state(pull=False)

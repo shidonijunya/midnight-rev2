@@ -674,10 +674,14 @@ def render_defenses_and_skills(pid, data):
         render_skill_buttons(pid)
 
 
-def render_grid(chars):
+def map_controls():
     config = load_app_state("battle_map_config", {}) or {}
     is_master = ss.get("_midnight_role") not in PLAYER_IDS
-    if is_master:
+    with st.container(horizontal=True, gap="small"):
+        with st.popover("Exibição"):
+            st.radio("Visibilidade", ["Mostrar ambos", "Ocultar grid", "Ocultar chefe", "Ocultar ambos"], key="map_visibility", label_visibility="collapsed")
+        if not is_master:
+            return
         with st.popover("🗺️ Configurar mapa", help="Imagem de fundo, corte e proporção"):
             from image_manager import upload_map_background
             upload = st.file_uploader("Imagem do mapa", type=["png", "jpg", "jpeg", "webp"],
@@ -708,6 +712,11 @@ def render_grid(chars):
                                "pan_x": pan_x, "pan_y": pan_y})
                 if save_app_state("battle_map_config", config):
                     st.rerun()
+
+
+def render_grid(chars):
+    config = load_app_state("battle_map_config", {}) or {}
+    is_master = ss.get("_midnight_role") not in PLAYER_IDS
     boss_cfg = load_app_state("boss_config", {}) or {}
     mob_urls = boss_cfg.get("mob_tokens", {}) or {}
     catalog = {}
@@ -831,11 +840,20 @@ def main():
         shared_animation()
         scene_panel()
 
-    boss_col, map_col = st.columns([1, 1], gap="small")
-    with boss_col:
-        boss_panel()
-    with map_col:
-        render_grid(chars)
+    visibility = ss.get("map_visibility", "Mostrar ambos")
+    if visibility == "Mostrar ambos":
+        boss_col, map_col = st.columns([1, 1], gap="small")
+        with boss_col:
+            boss_panel()
+        with map_col:
+            map_controls()
+            render_grid(chars)
+    else:
+        map_controls()
+        if visibility == "Ocultar grid":
+            boss_panel()
+        elif visibility == "Ocultar chefe":
+            render_grid(chars)
 
 
 

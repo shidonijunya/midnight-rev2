@@ -32,6 +32,9 @@ button.active{border-color:#c5485b;background:#4a1e29}#status{margin-left:auto;c
 <button id="measure" title="Medir distância">📏 Medir</button>
 <select id="fx_tool" title="Ferramentas de névoa e área">
 <option value="normal">Mover peças</option>
+<option value="fog_full">Cobrir mapa inteiro</option>
+<option value="rect_hide">Ocultar retângulo</option>
+<option value="rect_reveal">Revelar retângulo</option>
 <option value="fog_hide">Névoa: esconder</option>
 <option value="fog_reveal">Névoa: revelar</option>
 <option value="area_circle">Área: círculo</option>
@@ -147,6 +150,11 @@ function renderMap(){setBackground();ctx.imageSmoothingEnabled=true;ctx.imageSmo
    ctx.fill();ctx.stroke();ctx.restore();
  }
  areas.forEach(paintArea);
+ if(action?.mode==='rect'){
+   const {x,y,width,height}=fogBounds(action.start,action.end);
+   ctx.strokeStyle='#8edcff';ctx.lineWidth=2/scale;
+   ctx.strokeRect(x*CELL,y*CELL,width*CELL,height*CELL);
+ }
  if(action&&action.mode==='area')paintArea({kind:action.kind,start:action.start,end:action.end});
  for(const t of tokens){
   const span=side(t)*CELL,x=t.x*CELL+span/2,y=t.y*CELL+span/2,entry=catalog[t.id]||{},url=entry.url;
@@ -215,6 +223,25 @@ async function saveEffects(){
   effectsDirty=false;status.textContent='● Efeitos sincronizados';
  }catch(e){status.textContent='⚠ Falha ao salvar efeitos';}
 }
+function fogBounds(a,b){
+ return {x:Math.min(a.x,b.x),y:Math.min(a.y,b.y),width:Math.abs(a.x-b.x)+1,height:Math.abs(a.y-b.y)+1};
+}
+function editFogRectangle(start,end,hide){
+ const bounds=fogBounds(start,end),cells=new Set(fog);
+ for(let y=bounds.y;y<bounds.y+bounds.height;y++){
+  for(let x=bounds.x;x<bounds.x+bounds.width;x++){
+   const key=x+','+y;
+   if(hide)cells.add(key);else cells.delete(key);
+  }
+ }
+ fog=[...cells];saveEffects();
+}
+fxTool.addEventListener('change',()=>{
+ if(OPT.can_edit_effects&&fxTool.value==='fog_full'){
+  editFogRectangle({x:0,y:0},{x:COLS-1,y:ROWS-1},true);
+  fxTool.value='rect_reveal';
+ }
+});
 function paintFog(p,kind){
  const loc=cell(p),id=loc.x+','+loc.y,idx=fog.indexOf(id);
  if(kind==='fog_hide'&&idx===-1)fog.push(id);
@@ -263,7 +290,9 @@ vp.addEventListener('pointerdown',e=>{
  if(e.button!==0)return;
  vp.focus();const p=position(e),w=world(p),target=tokenAt(p);
  const tool=OPT.can_edit_effects?fxTool.value:'normal';
- if(tool==='fog_hide'||tool==='fog_reveal'){
+ if(tool.startsWith('rect_')){
+   action={mode:'rect',kind:tool,start:cell(p),end:cell(p)};
+ }else if(tool==='fog_hide'||tool==='fog_reveal'){
    action={mode:'fog',kind:tool};paintFog(p,tool);
  }else if(tool.startsWith('area_')){
    action={mode:'area',kind:tool,start:w,end:w};
@@ -275,6 +304,7 @@ vp.addEventListener('pointerdown',e=>{
 vp.addEventListener('pointermove',e=>{
  if(!action)return;const p=position(e),w=world(p);
  if(action.mode==='measure'||action.mode==='area')action.end=w;
+ if(action.mode==='rect')action.end=cell(p);
  if(action.mode==='fog')paintFog(p,action.kind);
  if(action.mode==='pan'){offsetX=action.ox+p.x-action.p.x;offsetY=action.oy+p.y-action.p.y;}
  if(action.mode==='token'){const t=tokens.find(t=>instance(t)===action.id);if(t){const at=cell(p);move(t,at.x+action.dx,at.y+action.dy);action.end=w;}}
@@ -285,6 +315,7 @@ vp.addEventListener('pointerup',e=>{
  if(!action)return;const previous=action,mode=action.mode,p=position(e);
  action=null;vp.classList.remove('drag');draw();
  if(mode==='token')save();
+ if(mode==='rect')editFogRectangle(previous.start,cell(p),previous.kind==='rect_hide');
  if(mode==='fog')saveEffects();
  if(mode==='area'){const w=world(p);const item={kind:previous.kind,start:previous.start,end:w};
    if(areas.length>=30)areas.shift();areas.push(item);saveEffects();}
